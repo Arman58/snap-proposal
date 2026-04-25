@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export function ProposalViewClient() {
   const { id } = useParams<{ id: string }>();
@@ -36,18 +37,19 @@ export function ProposalViewClient() {
   const { getProposal, updateProposal } = useProposalsStore();
 
   const [copied, setCopied] = useState(false);
+  const t = useT();
 
   const proposal = getProposal(id);
 
   if (!proposal) {
     return (
       <div className="flex flex-col items-center justify-center py-40 text-center">
-        <p className="text-base font-medium text-zinc-200">Proposal not found</p>
+        <p className="text-base font-medium text-zinc-200">{t("proposal_not_found")}</p>
         <p className="mt-1.5 text-sm text-zinc-500">
-          This proposal may have been deleted or doesn&apos;t exist.
+          {t("proposal_not_found_desc")}
         </p>
         <Button className="mt-6" asChild variant="outline" size="sm">
-          <Link href="/dashboard">Back to Proposals</Link>
+          <Link href="/dashboard">{t("back_to_proposals")}</Link>
         </Button>
       </div>
     );
@@ -95,7 +97,7 @@ export function ProposalViewClient() {
                   cfg.className
                 )}
               >
-                {cfg.label}
+                {t(proposal.status)}
               </span>
             </div>
           </div>
@@ -107,10 +109,10 @@ export function ProposalViewClient() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="sent">Sent</SelectItem>
-                <SelectItem value="accepted">Accepted</SelectItem>
-                <SelectItem value="declined">Declined</SelectItem>
+                <SelectItem value="draft">{t("draft")}</SelectItem>
+                <SelectItem value="sent">{t("sent")}</SelectItem>
+                <SelectItem value="accepted">{t("accepted")}</SelectItem>
+                <SelectItem value="declined">{t("declined")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -122,7 +124,7 @@ export function ProposalViewClient() {
                 onClick={() => updateProposal(proposal.id, { status: "sent" })}
               >
                 <Mail className="h-3.5 w-3.5" />
-                Mark Sent
+                {t("mark_sent")}
               </Button>
             )}
 
@@ -134,7 +136,7 @@ export function ProposalViewClient() {
                 onClick={() => updateProposal(proposal.id, { status: "accepted" })}
               >
                 <CheckCircle className="h-3.5 w-3.5" />
-                Mark Accepted
+                {t("mark_accepted")}
               </Button>
             )}
 
@@ -147,12 +149,12 @@ export function ProposalViewClient() {
               {copied ? (
                 <>
                   <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">Copied!</span>
+                  <span className="text-emerald-400">{t("copied")}</span>
                 </>
               ) : (
                 <>
                   <Link2 className="h-3.5 w-3.5" />
-                  Share
+                  {t("share")}
                 </>
               )}
             </Button>
@@ -164,7 +166,7 @@ export function ProposalViewClient() {
               onClick={() => window.print()}
             >
               <FileDown className="h-3.5 w-3.5" />
-              Export PDF
+              {t("export_pdf")}
             </Button>
 
             <Button
@@ -173,7 +175,7 @@ export function ProposalViewClient() {
               onClick={() => router.push(`/proposal/${proposal.id}/edit`)}
             >
               <Pencil className="h-3.5 w-3.5" />
-              Edit
+              {t("edit")}
             </Button>
           </div>
         </div>
@@ -196,7 +198,7 @@ export function ProposalViewClient() {
                   </p>
                 )}
                 <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-600 print:text-gray-400">
-                  Commercial Proposal
+                  {t("commercial_proposal")}
                 </p>
                 <h1 className="mt-1.5 text-xl font-semibold text-zinc-50 print:text-gray-900 leading-snug tracking-tight">
                   {proposal.title}
@@ -206,7 +208,7 @@ export function ProposalViewClient() {
               <div className="shrink-0 text-right space-y-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600 print:text-gray-400">
-                    Ref
+                    {t("ref")}
                   </p>
                   <p className="mt-0.5 font-mono text-xs text-zinc-400 print:text-gray-500">
                     #{proposal.id.slice(-8).toUpperCase()}
@@ -214,7 +216,7 @@ export function ProposalViewClient() {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600 print:text-gray-400">
-                    Date
+                    {t("proposal_date")}
                   </p>
                   <p className="mt-0.5 text-sm text-zinc-300 print:text-gray-700">
                     {formattedDate}
@@ -234,14 +236,14 @@ export function ProposalViewClient() {
             {proposal.company && (
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-2">
-                  From
+                  {t("from_label")}
                 </p>
                 <p className="text-sm font-medium text-gray-800">{proposal.company}</p>
               </div>
             )}
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-2">
-                Prepared For
+                {t("prepared_for")}
               </p>
               <p className="text-sm font-medium text-gray-800">{proposal.client}</p>
               {proposal.clientEmail && (
@@ -256,7 +258,7 @@ export function ProposalViewClient() {
               <thead>
                 <tr className="border-b-2 border-gray-100">
                   <th className="px-8 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 print:px-0">
-                    Product / Service
+                    {t("col_product_service")}
                   </th>
                   {customColumns.map((col) => (
                     <th
@@ -267,13 +269,13 @@ export function ProposalViewClient() {
                     </th>
                   ))}
                   <th className="px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 whitespace-nowrap">
-                    Qty
+                    {t("col_qty")}
                   </th>
                   <th className="px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 whitespace-nowrap">
-                    Unit Price
+                    {t("col_unit_price")}
                   </th>
                   <th className="px-8 py-3 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 print:px-0">
-                    Total
+                    {t("col_total")}
                   </th>
                 </tr>
               </thead>
@@ -316,14 +318,14 @@ export function ProposalViewClient() {
           <div className="flex justify-end border-t border-gray-100 px-8 py-5 print:px-0">
             <dl className="w-56 space-y-2">
               <div className="flex justify-between text-sm">
-                <dt className="text-gray-500">Subtotal</dt>
+                <dt className="text-gray-500">{t("subtotal")}</dt>
                 <dd className="tabular-nums text-gray-700 font-mono">
                   {formatCurrency(total)}
                 </dd>
               </div>
               <Separator className="bg-gray-200" />
               <div className="flex justify-between">
-                <dt className="text-sm font-semibold text-gray-900">Total</dt>
+                <dt className="text-sm font-semibold text-gray-900">{t("col_total")}</dt>
                 <dd className="text-base font-bold tabular-nums text-gray-900 font-mono">
                   {formatCurrency(total)}
                 </dd>
@@ -335,7 +337,7 @@ export function ProposalViewClient() {
           {proposal.notes && (
             <div className="border-t border-gray-100 px-8 py-5 print:px-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 mb-2">
-                Notes
+                {t("proposal_notes")}
               </p>
               <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap">
                 {proposal.notes}
@@ -348,7 +350,7 @@ export function ProposalViewClient() {
             <div className="grid grid-cols-2 gap-16">
               <div>
                 <div className="h-9 border-b border-gray-200" />
-                <p className="mt-2 text-xs text-gray-400">Signature &amp; date</p>
+                <p className="mt-2 text-xs text-gray-400">{t("signature_date")}</p>
                 {proposal.company && (
                   <p className="mt-0.5 text-xs font-medium text-gray-600">
                     {proposal.company}
@@ -357,7 +359,7 @@ export function ProposalViewClient() {
               </div>
               <div>
                 <div className="h-9 border-b border-gray-200" />
-                <p className="mt-2 text-xs text-gray-400">Client signature &amp; date</p>
+                <p className="mt-2 text-xs text-gray-400">{t("client_signature_date")}</p>
                 <p className="mt-0.5 text-xs font-medium text-gray-600">
                   {proposal.client}
                 </p>

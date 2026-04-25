@@ -33,6 +33,22 @@ import {
 } from "@/store/proposals";
 import { ProposalPreview } from "./proposal-preview";
 import { PRODUCT_CATALOG } from "@/lib/mock-data";
+import { useT } from "@/lib/i18n";
+
+// ─── i18n key maps for FIXED_COLS (keeps FIXED_COLS const unchanged) ──────────
+
+const FIXED_COL_LABEL_KEYS: Record<FixedColKey, string> = {
+  name: "col_product_service",
+  description: "col_description",
+  qty: "col_qty",
+  unit: "col_unit",
+  unitPrice: "col_unit_price",
+};
+
+const FIXED_COL_PLACEHOLDER_KEYS: Partial<Record<FixedColKey, string>> = {
+  name: "col_name_placeholder",
+  description: "col_description_placeholder",
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +152,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const [saving, setSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
 
+  const t = useT();
   const isEdit = Boolean(initialId);
   const total = proposalTotal(items);
   const canSave = title.trim() !== "" && client.trim() !== "";
@@ -273,7 +290,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
         </Button>
 
         <input
-          placeholder="Untitled proposal…"
+          placeholder={t("untitled_proposal")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-zinc-100 placeholder:text-zinc-600 outline-none focus:text-zinc-100"
@@ -284,7 +301,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           size="icon"
           onClick={() => setPreviewOpen((v) => !v)}
           className="shrink-0 hidden lg:flex"
-          title={previewOpen ? "Hide preview" : "Show preview"}
+          title={previewOpen ? t("hide_preview") : t("show_preview")}
         >
           {previewOpen ? (
             <EyeOff className="h-4 w-4" />
@@ -301,10 +318,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="sent">Sent</SelectItem>
-            <SelectItem value="accepted">Accepted</SelectItem>
-            <SelectItem value="declined">Declined</SelectItem>
+            <SelectItem value="draft">{t("draft")}</SelectItem>
+            <SelectItem value="sent">{t("sent")}</SelectItem>
+            <SelectItem value="accepted">{t("accepted")}</SelectItem>
+            <SelectItem value="declined">{t("declined")}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -314,7 +331,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           size="sm"
           className="shrink-0"
         >
-          {saving ? "Saving…" : isEdit ? "Save" : "Create"}
+          {saving ? t("saving") : isEdit ? t("save") : t("create")}
         </Button>
       </div>
 
@@ -335,22 +352,22 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="company" className="text-xs">
-                  Your Company
+                  {t("your_company")}
                 </Label>
                 <Input
                   id="company"
-                  placeholder="e.g. Lux Solutions LLC"
+                  placeholder={t("company_placeholder")}
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                 />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="client" className="text-xs">
-                  Client *
+                  {t("client_required")}
                 </Label>
                 <Input
                   id="client"
-                  placeholder="Client or company name"
+                  placeholder={t("client_placeholder")}
                   value={client}
                   onChange={(e) => setClient(e.target.value)}
                 />
@@ -359,7 +376,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="email" className="text-xs">
-                  Client Email
+                  {t("client_email_label")}
                 </Label>
                 <Input
                   id="email"
@@ -372,11 +389,11 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             </div>
             <div className="space-y-1">
               <Label htmlFor="notes" className="text-xs">
-                Notes
+                {t("proposal_notes")}
               </Label>
               <Textarea
                 id="notes"
-                placeholder="Notes visible to the client in the proposal…"
+                placeholder={t("notes_placeholder")}
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -402,7 +419,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           {/* Catalog quick-add */}
           <div className="border-t border-zinc-800 px-4 sm:px-6 py-5">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Quick-add from catalog
+              {t("quick_add_catalog")}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
               {PRODUCT_CATALOG.map((cat) => (
@@ -436,10 +453,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           {/* Footer actions */}
           <div className="flex justify-end gap-2 px-4 sm:px-6 py-4">
             <Button variant="outline" asChild>
-              <Link href="/dashboard">Cancel</Link>
+              <Link href="/dashboard">{t("cancel")}</Link>
             </Button>
             <Button onClick={handleSave} disabled={saving || !canSave}>
-              {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Proposal"}
+              {saving ? t("saving") : isEdit ? t("save_changes") : t("create_proposal")}
             </Button>
           </div>
         </div>
@@ -491,6 +508,7 @@ function ItemsGrid({
   onRenameColumn,
   onDeleteColumn,
 }: ItemsGridProps) {
+  const t = useT();
   const [showAddCol, setShowAddCol] = useState(false);
   const [addColLabel, setAddColLabel] = useState("");
   const [editColId, setEditColId] = useState<string | null>(null);
@@ -604,7 +622,7 @@ function ItemsGrid({
                   col.align === "right" ? "text-right" : "text-left"
                 }`}
               >
-                {col.label}
+                {t(FIXED_COL_LABEL_KEYS[col.key])}
               </th>
             ))}
 
@@ -630,7 +648,7 @@ function ItemsGrid({
                   <span className="group/col flex items-center gap-1">
                     <button
                       onClick={() => startEditCol(col)}
-                      title="Click to rename"
+                      title={t("click_to_rename")}
                       className="hover:text-zinc-200 transition-colors"
                     >
                       {col.label}
@@ -638,7 +656,7 @@ function ItemsGrid({
                     <button
                       onClick={() => onDeleteColumn(col.id)}
                       className="opacity-0 group-hover/col:opacity-100 rounded p-0.5 text-zinc-600 hover:text-red-400 transition-all"
-                      title="Remove column"
+                      title={t("remove_column")}
                     >
                       <X className="h-2.5 w-2.5" />
                     </button>
@@ -663,7 +681,7 @@ function ItemsGrid({
                       }
                     }}
                     onBlur={commitAddCol}
-                    placeholder="Column name…"
+                    placeholder={t("column_name_placeholder")}
                     className="w-full min-w-[100px] rounded border border-zinc-600 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-100 outline-none placeholder:text-zinc-600"
                   />
                   <button
@@ -680,7 +698,7 @@ function ItemsGrid({
                 <button
                   onClick={() => setShowAddCol(true)}
                   className="rounded p-1 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-                  title="Add custom column"
+                  title={t("add_custom_column")}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -689,7 +707,7 @@ function ItemsGrid({
 
             {/* Total + delete */}
             <th className="w-[88px] px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Total
+              {t("col_total")}
             </th>
             <th className="w-8" />
           </tr>
@@ -725,7 +743,7 @@ function ItemsGrid({
                 className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add row
+                {t("add_row")}
               </button>
             </td>
             <td className="py-2.5 px-2 text-right text-sm font-bold font-mono text-zinc-100 whitespace-nowrap">
@@ -771,6 +789,7 @@ function ItemRow({
   onDelete,
   onKeyDown,
 }: ItemRowProps) {
+  const t = useT();
   const lineTotal = item.qty * item.unitPrice;
 
   const cellBase =
@@ -793,7 +812,7 @@ function ItemRow({
               ref={refCallback(rowIndex, col.key)}
               type={col.inputType}
               value={value}
-              placeholder={col.placeholder ?? ""}
+              placeholder={FIXED_COL_PLACEHOLDER_KEYS[col.key] ? t(FIXED_COL_PLACEHOLDER_KEYS[col.key]!) : (col.placeholder ?? "")}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 const v =
                   col.inputType === "number"
@@ -836,7 +855,7 @@ function ItemRow({
           onClick={onDelete}
           disabled={!canDelete}
           className="opacity-0 group-hover/row:opacity-100 rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 disabled:opacity-0 transition-all"
-          title="Delete row"
+          title={t("delete_row")}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>

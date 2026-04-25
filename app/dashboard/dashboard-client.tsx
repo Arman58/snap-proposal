@@ -28,6 +28,7 @@ import {
   type ProposalStatus,
 } from "@/store/proposals";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export function DashboardClient() {
   const { proposals, deleteProposal } = useProposalsStore();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
+  const t = useT();
 
   const stats = {
     total: proposals.length,
@@ -99,16 +101,16 @@ export function DashboardClient() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
-            Proposals
+            {t("proposals")}
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {proposals.length} total
+            {proposals.length} {t("total").toLowerCase()}
           </p>
         </div>
         <Button asChild size="sm">
           <Link href="/proposal/new">
             <Plus className="h-3.5 w-3.5" />
-            New Proposal
+            {t("new_proposal")}
           </Link>
         </Button>
       </div>
@@ -127,7 +129,7 @@ export function DashboardClient() {
                 "bg-zinc-900/60"
             )}
           >
-            <p className="text-xs font-medium text-zinc-500">{label}</p>
+            <p className="text-xs font-medium text-zinc-500">{t(key)}</p>
             <p className="text-2xl font-semibold tabular-nums text-zinc-100">
               {stats[key]}
             </p>
@@ -140,7 +142,7 @@ export function DashboardClient() {
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
           <Input
-            placeholder="Search by title or client…"
+            placeholder={t("search_placeholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-8 text-sm"
@@ -149,7 +151,7 @@ export function DashboardClient() {
 
         {/* Segmented filter */}
         <div className="flex items-center gap-0.5 rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
-          {STATUS_FILTERS.map(({ value, label }) => (
+          {STATUS_FILTERS.map(({ value }) => (
             <button
               key={value}
               onClick={() => setStatusFilter(value)}
@@ -160,7 +162,7 @@ export function DashboardClient() {
                   : "text-zinc-500 hover:text-zinc-300"
               )}
             >
-              {label}
+              {t(value)}
             </button>
           ))}
         </div>
@@ -170,17 +172,17 @@ export function DashboardClient() {
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 py-20 text-center">
           <FileText className="h-8 w-8 text-zinc-700 mb-3" />
-          <p className="text-sm font-medium text-zinc-400">No proposals found</p>
+          <p className="text-sm font-medium text-zinc-400">{t("no_proposals_found")}</p>
           <p className="mt-1 text-xs text-zinc-600">
             {search || statusFilter !== "all"
-              ? "Try adjusting your search or filter."
-              : "Create your first proposal to get started."}
+              ? t("adjust_search")
+              : t("create_first_proposal")}
           </p>
           {!search && statusFilter === "all" && (
             <Button className="mt-5" asChild size="sm" variant="outline">
               <Link href="/proposal/new">
                 <Plus className="h-3.5 w-3.5" />
-                New Proposal
+                {t("new_proposal")}
               </Link>
             </Button>
           )}
@@ -189,9 +191,9 @@ export function DashboardClient() {
         <div className="overflow-hidden rounded-xl border border-zinc-800">
           {/* Table header */}
           <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-zinc-800 px-5 py-2.5">
-            <p className="text-xs font-medium text-zinc-500">Proposal</p>
+            <p className="text-xs font-medium text-zinc-500">{t("proposal")}</p>
             <p className="hidden text-xs font-medium text-zinc-500 sm:block text-right">
-              Amount
+              {t("amount")}
             </p>
             <div className="w-8" />
           </div>
@@ -227,14 +229,14 @@ export function DashboardClient() {
                             STATUS_BADGE[proposal.status]
                           )}
                         >
-                          {STATUS_LABEL[proposal.status]}
+                          {t(proposal.status)}
                         </span>
                       </div>
                       <p className="mt-0.5 truncate text-xs text-zinc-500">
                         {proposal.client}
                         <span className="mx-1.5 text-zinc-700">·</span>
                         {proposal.items.length}{" "}
-                        {proposal.items.length === 1 ? "item" : "items"}
+                        {proposal.items.length === 1 ? t("item") : t("items")}
                         <span className="mx-1.5 text-zinc-700 hidden sm:inline">
                           ·
                         </span>
@@ -273,7 +275,7 @@ export function DashboardClient() {
                           }}
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          View
+                          {t("view")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
@@ -282,7 +284,7 @@ export function DashboardClient() {
                           }}
                         >
                           <Pencil className="h-3.5 w-3.5" />
-                          Edit
+                          {t("edit")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -293,7 +295,7 @@ export function DashboardClient() {
                           }}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          Delete
+                          {t("delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

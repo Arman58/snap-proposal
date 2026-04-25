@@ -5,13 +5,16 @@ import { usePathname } from "next/navigation";
 import { StickyNote, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-
-const NAV_LINKS = [
-  { href: "/dashboard", label: "Proposals" },
-];
+import { useT } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 
 export function Nav() {
   const pathname = usePathname();
+  const t = useT();
+
+  const NAV_LINKS = [
+    { href: "/dashboard", label: t("proposals") },
+  ];
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-sm">
@@ -47,14 +50,17 @@ export function Nav() {
           </nav>
         </div>
 
-        {/* CTA */}
-        <Button asChild size="sm" className="gap-1.5">
-          <Link href="/proposal/new">
-            <Plus className="h-3.5 w-3.5" />
-            <span className="hidden sm:block">New Proposal</span>
-            <span className="sm:hidden">New</span>
-          </Link>
-        </Button>
+        {/* Right side: language switcher + CTA */}
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <Button asChild size="sm" className="gap-1.5">
+            <Link href="/proposal/new">
+              <Plus className="h-3.5 w-3.5" />
+              <span className="hidden sm:block">{t("new_proposal")}</span>
+              <span className="sm:hidden">{t("new")}</span>
+            </Link>
+          </Button>
+        </div>
       </div>
     </header>
   );
