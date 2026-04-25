@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: oklch(0.08 0 0);
+  --color-foreground: oklch(0.96 0 0);
+  --color-card: oklch(0.11 0 0);
+  --color-card-foreground: oklch(0.96 0 0);
+  --color-popover: oklch(0.09 0 0);
+  --color-popover-foreground: oklch(0.96 0 0);
+  --color-primary: oklch(0.96 0 0);
+  --color-primary-foreground: oklch(0.12 0 0);
+  --color-secondary: oklch(0.17 0 0);
+  --color-secondary-foreground: oklch(0.96 0 0);
+  --color-muted: oklch(0.17 0 0);
+  --color-muted-foreground: oklch(0.52 0 0);
+  --color-accent: oklch(0.17 0 0);
+  --color-accent-foreground: oklch(0.96 0 0);
+  --color-destructive: oklch(0.396 0.141 25.723);
+  --color-border: oklch(0.20 0 0);
+  --color-input: oklch(0.20 0 0);
+  --color-ring: oklch(0.52 0 0);
+  --radius: 0.5rem;
+  --radius-xs: calc(var(--radius) * 0.5);
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: calc(var(--radius) * 0.875);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+  /* Nav height token — keeps sticky offsets consistent */
+  --nav-h: 3.25rem;
+}
+
+* {
+  border-color: oklch(0.20 0 0);
+}
+
+body {
+  background-color: oklch(0.08 0 0);
+  color: oklch(0.96 0 0);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numbers for all mono/number spans globally */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Print / PDF styles ─────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 18mm 20mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+    font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide everything except the proposal document */
+  header,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Let the document fill the full page width */
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Ensure table rows don't break across pages */
+  tr {
+    break-inside: avoid;
+  }
+
+  /* Remove screen-only shadows / backgrounds from the document wrapper */
+  #proposal-document {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
