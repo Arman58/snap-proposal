@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   Plus,
-  FileText,
   MoreHorizontal,
   Eye,
   Pencil,
@@ -33,9 +32,11 @@ import {
 import {
   useProposalsStore,
   proposalTotal,
-  formatCurrency,
+  formatWithCurrency,
+  DEFAULT_DISPLAY_SETTINGS,
   type ProposalStatus,
 } from "@/store/proposals";
+import { nanoid } from "@/lib/nanoid";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -465,21 +466,13 @@ export function DashboardClient() {
   return (
     <div className="space-y-8">
       {/* ── Page header ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
-            {t("proposals")}
-          </h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {proposals.length} {t("total").toLowerCase()}
-          </p>
-        </div>
-        <Button asChild size="sm">
-          <Link href="/proposal/new">
-            <Plus className="h-3.5 w-3.5" />
-            {t("new_proposal")}
-          </Link>
-        </Button>
+      <div>
+        <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
+          {t("proposals")}
+        </h1>
+        <p className="mt-0.5 text-sm text-zinc-500">
+          {proposals.length} {t("total").toLowerCase()}
+        </p>
       </div>
 
       {/* ── Stat strip ────────────────────────────────────────────────────── */}
@@ -557,6 +550,10 @@ export function DashboardClient() {
         />
       </div>
 
+      <p className="text-[11px] text-zinc-600 leading-relaxed max-w-2xl">
+        {t("dashboard_only_fields")}
+      </p>
+
       {/* ── Proposals list ────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 py-24 text-center">
@@ -620,23 +617,21 @@ export function DashboardClient() {
           <div className="divide-y divide-zinc-800/60">
             {filtered.map((proposal, rowIdx) => {
               const total = proposalTotal(proposal.items);
+              const rowCurrency =
+                proposal.displaySettings?.currency ?? DEFAULT_DISPLAY_SETTINGS.currency;
               return (
                 <div
                   key={proposal.id}
-                  className="group grid items-center gap-4 px-5 py-4 cursor-pointer hover:bg-zinc-900/40 transition-colors animate-row-in"
+                  className="group grid items-center gap-4 px-5 py-4 hover:bg-zinc-900/40 transition-colors animate-row-in"
                   style={{ ...gridStyle, animationDelay: `${rowIdx * 30}ms` }}
-                  onClick={() => router.push(`/proposal/${proposal.id}`)}
                 >
-                  {/* Left: title + meta (always visible) */}
+                  {/* Left: title + meta — title links to proposal */}
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Product image thumbnail / upload */}
                     {isVisible("image") && (() => {
                       const src = rowImages.getImage(proposal.id);
                       return (
-                        <div
-                          className="shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <div className="shrink-0">
                           <label className="cursor-pointer block">
                             <input
                               type="file"
@@ -667,50 +662,53 @@ export function DashboardClient() {
                       );
                     })()}
 
-                    {/* Status dot — always shown as a visual anchor */}
-                    <div
-                      className={cn(
-                        "h-1.5 w-1.5 shrink-0 rounded-full",
-                        STATUS_DOT[proposal.status]
-                      )}
-                    />
+                    <Link
+                      href={`/proposal/${proposal.id}`}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-md -m-1 p-1 outline-none hover:bg-zinc-800/30 focus-visible:ring-2 focus-visible:ring-[var(--theme-color)] transition-colors"
+                    >
+                      <div
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          STATUS_DOT[proposal.status]
+                        )}
+                      />
 
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-100 group-hover:text-white transition-colors">
-                        {proposal.title}
-                      </p>
-
-                      {/* Meta line: in-cell columns rendered in user-defined order */}
-                      {visibleCellCols.length > 0 && (
-                        <p className="mt-0.5 flex flex-wrap items-center gap-x-1 text-xs text-zinc-500">
-                          {visibleCellCols.map((col, i) => (
-                            <span key={col.id} className="flex items-center gap-x-1">
-                              {i > 0 && (
-                                <span className="text-zinc-700">·</span>
-                              )}
-                              {col.id === "status" && (
-                                <span
-                                  className={cn(
-                                    "inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
-                                    STATUS_BADGE[proposal.status]
-                                  )}
-                                >
-                                  {t(proposal.status)}
-                                </span>
-                              )}
-                              {col.id === "client" && proposal.client}
-                              {col.id === "items" && (
-                                <>
-                                  {proposal.items.length}{" "}
-                                  {proposal.items.length === 1 ? t("item") : t("items")}
-                                </>
-                              )}
-                              {col.id === "date" && formatRelativeDate(proposal.updatedAt, t)}
-                            </span>
-                          ))}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-zinc-100 group-hover:text-white transition-colors">
+                          {proposal.title}
                         </p>
-                      )}
-                    </div>
+
+                        {visibleCellCols.length > 0 && (
+                          <p className="mt-0.5 flex flex-wrap items-center gap-x-1 text-xs text-zinc-500">
+                            {visibleCellCols.map((col, i) => (
+                              <span key={col.id} className="flex items-center gap-x-1">
+                                {i > 0 && (
+                                  <span className="text-zinc-700">·</span>
+                                )}
+                                {col.id === "status" && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                                      STATUS_BADGE[proposal.status]
+                                    )}
+                                  >
+                                    {t(proposal.status)}
+                                  </span>
+                                )}
+                                {col.id === "client" && proposal.client}
+                                {col.id === "items" && (
+                                  <>
+                                    {proposal.items.length}{" "}
+                                    {proposal.items.length === 1 ? t("item") : t("items")}
+                                  </>
+                                )}
+                                {col.id === "date" && formatRelativeDate(proposal.updatedAt, t)}
+                              </span>
+                            ))}
+                          </p>
+                        )}
+                      </div>
+                    </Link>
                   </div>
 
                   {/* Remaining top-level columns in user-defined order */}
@@ -738,7 +736,7 @@ export function DashboardClient() {
                           key="amount"
                           className="text-sm font-medium tabular-nums text-zinc-300 text-right font-mono"
                         >
-                          {formatCurrency(total)}
+                          {formatWithCurrency(total, rowCurrency)}
                         </p>
                       );
                     if (col.id === "actions")
@@ -748,7 +746,7 @@ export function DashboardClient() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-7 w-7 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/proposal/${proposal.id}`);
@@ -760,7 +758,7 @@ export function DashboardClient() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-7 w-7 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/proposal/${proposal.id}/edit`);
@@ -777,7 +775,7 @@ export function DashboardClient() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="h-7 w-7 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
@@ -817,7 +815,7 @@ export function DashboardClient() {
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const newId = `${Date.now()}`;
+                                  const newId = `prop-${nanoid()}`;
                                   const today = new Date().toISOString().split("T")[0];
                                   addProposal({
                                     ...proposal,

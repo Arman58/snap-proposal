@@ -23,7 +23,9 @@ import {
   ImageIcon,
   Settings2,
   GripVertical,
-  Loader2,
+  Copy,
+  ChevronRight,
+  Keyboard,
 } from "lucide-react";
 import Link from "next/link";
 import { nanoid } from "@/lib/nanoid";
@@ -61,6 +63,31 @@ import { ProposalPreview } from "./proposal-preview";
 import { PRODUCT_CATALOG } from "@/lib/mock-data";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/toaster";
+
+const BUILDER_DRAFT_VERSION = 1;
+const SYNC_THEME_KEY = "snap-sync-theme-accent";
+const THEME_COLOR_KEY = "app-theme-color";
+
+function builderFormSnapshot(p: {
+  title: string;
+  company: string;
+  companyEmail: string;
+  companyPhone: string;
+  client: string;
+  clientEmail: string;
+  clientCompany: string;
+  clientPhone: string;
+  notes: string;
+  showNotes: boolean;
+  status: ProposalStatus;
+  displaySettings: DisplaySettings;
+  items: LineItem[];
+  customColumns: CustomColumn[];
+  columnConfigs: ColumnConfig[];
+}) {
+  return JSON.stringify(p);
+}
 
 // ─── i18n key maps for FIXED_COLS ─────────────────────────────────────────────
 
@@ -473,9 +500,16 @@ function ColumnManagerDropdown({ configs, onChange, onAddColumn }: ColumnManager
 interface FinalSettingsDropdownProps {
   settings: DisplaySettings;
   onChange: (s: DisplaySettings) => void;
+  syncThemeAccent: boolean;
+  onSyncThemeAccentChange: (v: boolean) => void;
 }
 
-function FinalSettingsDropdown({ settings, onChange }: FinalSettingsDropdownProps) {
+function FinalSettingsDropdown({
+  settings,
+  onChange,
+  syncThemeAccent,
+  onSyncThemeAccentChange,
+}: FinalSettingsDropdownProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -610,6 +644,15 @@ function FinalSettingsDropdown({ settings, onChange }: FinalSettingsDropdownProp
               />
               <span className="text-xs text-zinc-400 font-mono">{settings.accentColor}</span>
             </label>
+            <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={syncThemeAccent}
+                onChange={(e) => onSyncThemeAccentChange(e.target.checked)}
+                className="h-3.5 w-3.5 accent-blue-500"
+              />
+              <span className="text-xs text-zinc-400">{t("sync_theme_accent")}</span>
+            </label>
           </div>
         </div>
       )}
@@ -660,16 +703,254 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const skipColConfigPersistOnce = useRef(true);
 
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewDocDate] = useState(
+    () => existing?.updatedAt ?? new Date().toISOString().split("T")[0]
+  );
+  const [showSaveHints, setShowSaveHints] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [syncThemeAccent, setSyncThemeAccent] = useState(false);
+
+  const draftKey = `snap-builder-draft-${initialId ?? "new"}`;
+  const lastSavedRef = useRef("");
+  const draftHydratedRef = useRef(false);
+  const restoredDraftSkipColMerge = useRef(false);
+  const [draftReady, setDraftReady] = useState(false);
 
   const t = useT();
   const isEdit = Boolean(initialId);
   const total = proposalTotal(items);
   const canSave = title.trim() !== "" && client.trim() !== "";
+  const hasNamedLineItem = items.some((i) => i.name.trim() !== "");
+
+  const buildSnapshot = useCallback(
+    () =>
+      builderFormSnapshot({
+        title,
+        company,
+        companyEmail,
+        companyPhone,
+        client,
+        clientEmail,
+        clientCompany,
+        clientPhone,
+        notes,
+        showNotes,
+        status,
+        displaySettings,
+        items,
+        customColumns,
+        columnConfigs,
+      }),
+    [
+      title,
+      company,
+      companyEmail,
+      companyPhone,
+      client,
+      clientEmail,
+      clientCompany,
+      clientPhone,
+      notes,
+      showNotes,
+      status,
+      displaySettings,
+      items,
+      customColumns,
+      columnConfigs,
+    ]
+  );
+
+  const isDirty = draftReady && buildSnapshot() !== lastSavedRef.current;
+
+  useEffect(() => {
+    try {
+      setSyncThemeAccent(localStorage.getItem(SYNC_THEME_KEY) === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!syncThemeAccent) return;
+    document.documentElement.style.setProperty("--theme-color", displaySettings.accentColor);
+    try {
+      localStorage.setItem(THEME_COLOR_KEY, displaySettings.accentColor);
+    } catch {
+      /* ignore */
+    }
+  }, [displaySettings.accentColor, syncThemeAccent]);
+
+  function persistSyncThemeAccent(v: boolean) {
+    setSyncThemeAccent(v);
+    try {
+      localStorage.setItem(SYNC_THEME_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Restore draft once; align dirty baseline
+  useLayoutEffect(() => {
+    if (draftHydratedRef.current) return;
+    draftHydratedRef.current = true;
+    const ex = initialId ? getProposal(initialId) : undefined;
+    let restored = false;
+
+    type DraftShape = {
+      v?: number;
+      savedAt?: string;
+      title?: string;
+      company?: string;
+      companyEmail?: string;
+      companyPhone?: string;
+      client?: string;
+      clientEmail?: string;
+      clientCompany?: string;
+      clientPhone?: string;
+      notes?: string;
+      showNotes?: boolean;
+      status?: ProposalStatus;
+      displaySettings?: DisplaySettings;
+      items?: LineItem[];
+      customColumns?: CustomColumn[];
+      columnConfigs?: ColumnConfig[];
+    };
+
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw) as DraftShape;
+        if (d.v === BUILDER_DRAFT_VERSION && Array.isArray(d.items)) {
+          let useDraft = !initialId;
+          if (initialId && ex) {
+            const draftTs = new Date(d.savedAt || 0).getTime();
+            const propTs = new Date(ex.updatedAt).getTime();
+            useDraft = draftTs > propTs;
+          }
+          if (useDraft) {
+            restored = true;
+            const cols = d.customColumns ?? [];
+            const rowItems =
+              d.items!.length > 0 ? d.items! : [emptyItem(cols)];
+            const configs =
+              d.columnConfigs && d.columnConfigs.length > 0
+                ? d.columnConfigs
+                : buildDefaultColumnConfigs(cols);
+            lastSavedRef.current = builderFormSnapshot({
+              title: d.title ?? "",
+              company: d.company ?? "",
+              companyEmail: d.companyEmail ?? "",
+              companyPhone: d.companyPhone ?? "",
+              client: d.client ?? "",
+              clientEmail: d.clientEmail ?? "",
+              clientCompany: d.clientCompany ?? "",
+              clientPhone: d.clientPhone ?? "",
+              notes: d.notes ?? "",
+              showNotes: Boolean(d.showNotes ?? d.notes),
+              status: d.status ?? "draft",
+              displaySettings: {
+                ...DEFAULT_DISPLAY_SETTINGS,
+                ...d.displaySettings,
+              },
+              items: rowItems,
+              customColumns: cols,
+              columnConfigs: configs,
+            });
+            setTitle(d.title ?? "");
+            setCompany(d.company ?? "");
+            setCompanyEmail(d.companyEmail ?? "");
+            setCompanyPhone(d.companyPhone ?? "");
+            setClient(d.client ?? "");
+            setClientEmail(d.clientEmail ?? "");
+            setClientCompany(d.clientCompany ?? "");
+            setClientPhone(d.clientPhone ?? "");
+            setNotes(d.notes ?? "");
+            setShowNotes(Boolean(d.showNotes ?? d.notes));
+            if (d.status) setStatus(d.status);
+            if (d.displaySettings)
+              setDisplaySettings({
+                ...DEFAULT_DISPLAY_SETTINGS,
+                ...d.displaySettings,
+              });
+            setItems(rowItems);
+            setCustomColumns(cols);
+            if (d.columnConfigs?.length) {
+              restoredDraftSkipColMerge.current = true;
+              setColumnConfigs(d.columnConfigs);
+            }
+            queueMicrotask(() => toast(t("draft_restored"), { variant: "default" }));
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (!restored) {
+      lastSavedRef.current = builderFormSnapshot({
+        title: ex?.title ?? "",
+        company: ex?.company ?? "",
+        companyEmail: ex?.companyEmail ?? "",
+        companyPhone: ex?.companyPhone ?? "",
+        client: ex?.client ?? "",
+        clientEmail: ex?.clientEmail ?? "",
+        clientCompany: ex?.clientCompany ?? "",
+        clientPhone: ex?.clientPhone ?? "",
+        notes: ex?.notes ?? "",
+        showNotes: Boolean(ex?.notes),
+        status: ex?.status ?? "draft",
+        displaySettings: ex?.displaySettings ?? { ...DEFAULT_DISPLAY_SETTINGS },
+        items: ex?.items?.length ? ex.items : [emptyItem(ex?.customColumns ?? [])],
+        customColumns: ex?.customColumns ?? [],
+        columnConfigs: buildDefaultColumnConfigs(ex?.customColumns ?? []),
+      });
+    }
+
+    setDraftReady(true);
+  }, [draftKey, initialId, getProposal, t]);
+
+  // Debounced draft autosave
+  useEffect(() => {
+    if (!draftReady) return;
+    const snap = buildSnapshot();
+    if (snap === lastSavedRef.current) return;
+    const h = window.setTimeout(() => {
+      try {
+        const parsed = JSON.parse(snap) as Record<string, unknown>;
+        localStorage.setItem(
+          draftKey,
+          JSON.stringify({
+            v: BUILDER_DRAFT_VERSION,
+            savedAt: new Date().toISOString(),
+            ...parsed,
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 600);
+    return () => window.clearTimeout(h);
+  }, [buildSnapshot, draftKey, draftReady]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!draftReady) return;
+      if (buildSnapshot() !== lastSavedRef.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [buildSnapshot, draftReady]);
 
   // Apply `localStorage` after mount, before paint — avoids hydration mismatch and default→storage flash
   useLayoutEffect(() => {
+    if (restoredDraftSkipColMerge.current) {
+      restoredDraftSkipColMerge.current = false;
+      return;
+    }
     setColumnConfigs(buildInitialColumnConfigs(customColumns));
   }, [customColumns]);
 
@@ -705,6 +986,22 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
 
   const deleteItem = useCallback((id: string) => {
     setItems((prev) => (prev.length > 1 ? prev.filter((i) => i.id !== id) : prev));
+  }, []);
+
+  const duplicateItem = useCallback((id: string) => {
+    setItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === id);
+      if (idx === -1) return prev;
+      const src = prev[idx];
+      const copy: LineItem = {
+        ...src,
+        id: nanoid(),
+        attrs: { ...src.attrs },
+      };
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
   }, []);
 
   const moveItem = useCallback((fromId: string, toId: string) => {
@@ -798,53 +1095,68 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   // ─── Save ─────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!canSave) return;
+    if (!canSave) {
+      setShowSaveHints(true);
+      return;
+    }
+    if (!hasNamedLineItem) {
+      toast(t("no_line_items_warning"), { variant: "default" });
+    }
     setSaving(true);
-    setSaveStatus("saving");
+    setShowSaveHints(false);
     const now = new Date().toISOString().split("T")[0];
 
-    if (isEdit && initialId) {
-      updateProposal(initialId, {
-        title,
-        company,
-        companyEmail,
-        companyPhone,
-        client,
-        clientEmail,
-        clientCompany,
-        clientPhone,
-        notes,
-        status,
-        items,
-        customColumns,
-        displaySettings,
-      });
-      router.push(`/proposal/${initialId}`);
-    } else {
-      const id = `prop-${nanoid()}`;
-      addProposal({
-        id,
-        title,
-        company,
-        companyEmail,
-        companyPhone,
-        client,
-        clientEmail,
-        clientCompany,
-        clientPhone,
-        notes,
-        status,
-        items,
-        customColumns,
-        displaySettings,
-        createdAt: now,
-        updatedAt: now,
-      });
-      router.push(`/proposal/${id}`);
+    try {
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        /* ignore */
+      }
+
+      if (isEdit && initialId) {
+        updateProposal(initialId, {
+          title,
+          company,
+          companyEmail,
+          companyPhone,
+          client,
+          clientEmail,
+          clientCompany,
+          clientPhone,
+          notes,
+          status,
+          items,
+          customColumns,
+          displaySettings,
+        });
+        lastSavedRef.current = buildSnapshot();
+        router.push(`/proposal/${initialId}`);
+      } else {
+        const id = `prop-${nanoid()}`;
+        addProposal({
+          id,
+          title,
+          company,
+          companyEmail,
+          companyPhone,
+          client,
+          clientEmail,
+          clientCompany,
+          clientPhone,
+          notes,
+          status,
+          items,
+          customColumns,
+          displaySettings,
+          createdAt: now,
+          updatedAt: now,
+        });
+        lastSavedRef.current = buildSnapshot();
+        router.push(`/proposal/${id}`);
+      }
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2500);
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -866,7 +1178,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-zinc-100 placeholder:text-zinc-600 outline-none focus:text-zinc-100"
         />
 
-        {/* Preview toggle */}
+        {/* Preview toggle — desktop */}
         <Button
           variant="ghost"
           size="icon"
@@ -881,6 +1193,17 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           )}
         </Button>
 
+        {/* Preview — mobile / tablet */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 lg:hidden h-8 gap-1.5"
+          onClick={() => setMobilePreviewOpen(true)}
+        >
+          <Eye className="h-3.5 w-3.5" />
+          {t("open_preview")}
+        </Button>
+
         {/* Column manager */}
         <ColumnManagerDropdown
           configs={columnConfigs}
@@ -892,6 +1215,8 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
         <FinalSettingsDropdown
           settings={displaySettings}
           onChange={setDisplaySettings}
+          syncThemeAccent={syncThemeAccent}
+          onSyncThemeAccentChange={persistSyncThemeAccent}
         />
 
         <Select
@@ -909,30 +1234,31 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           </SelectContent>
         </Select>
 
-        {/* Auto-save status badge */}
-        {saveStatus !== "idle" && (
-          <span className={cn(
-            "flex items-center gap-1.5 text-xs font-medium transition-all",
-            saveStatus === "saving" ? "text-zinc-500" : "text-emerald-400"
-          )}>
-            {saveStatus === "saving" ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Check className="h-3.5 w-3.5" />
-            )}
-            {saveStatus === "saving" ? t("saving") : t("saved")}
+        {isDirty && (
+          <span className="hidden sm:inline text-xs text-amber-400/90 whitespace-nowrap">
+            {t("unsaved_changes")}
           </span>
         )}
 
         <Button
           onClick={handleSave}
-          disabled={saving || !canSave}
+          disabled={saving}
           size="sm"
           className="shrink-0"
         >
           {saving ? t("saving") : isEdit ? t("save") : t("create")}
         </Button>
       </div>
+
+      {showSaveHints && !canSave && (
+        <div className="px-4 sm:px-6 py-2.5 border-b border-amber-900/40 bg-amber-950/25 text-xs text-amber-200/95">
+          {!title.trim() && !client.trim()
+            ? t("save_requires_both")
+            : !title.trim()
+              ? t("save_requires_title")
+              : t("save_requires_client")}
+        </div>
+      )}
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="flex items-start">
@@ -1003,11 +1329,13 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="clientPhone" className="text-xs">Client Phone</Label>
+                  <Label htmlFor="clientPhone" className="text-xs">
+                    {t("client_phone")}
+                  </Label>
                   <Input
                     id="clientPhone"
                     type="tel"
-                    placeholder="+1 555 000"
+                    placeholder={t("phone_placeholder")}
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
                   />
@@ -1038,6 +1366,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             currency={displaySettings.currency}
             onAddItem={addItem}
             onDeleteItem={deleteItem}
+            onDuplicateItem={duplicateItem}
             onMoveItem={moveItem}
             onUpdateField={updateField}
             onUpdateAttr={updateAttr}
@@ -1188,7 +1517,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             <Button variant="outline" asChild>
               <Link href="/dashboard">{t("cancel")}</Link>
             </Button>
-            <Button onClick={handleSave} disabled={saving || !canSave}>
+            <Button onClick={handleSave} disabled={saving}>
               {saving ? t("saving") : isEdit ? t("save_changes") : t("create_proposal")}
             </Button>
           </div>
@@ -1226,6 +1555,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
               items={items}
               customColumns={customColumns}
               status={status}
+              documentDate={previewDocDate}
               showPrice={displaySettings.showPrice}
               showTotal={displaySettings.showTotal}
               showDescription={displaySettings.showDescription}
@@ -1237,6 +1567,38 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={mobilePreviewOpen} onOpenChange={setMobilePreviewOpen}>
+        <DialogContent className="fixed inset-0 left-0 top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-zinc-800 p-0 sm:rounded-none">
+          <DialogHeader className="border-b border-zinc-800 px-4 py-3 text-left shrink-0">
+            <DialogTitle className="text-base">{t("preview_sheet_title")}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto bg-zinc-900 p-4">
+            <ProposalPreview
+              title={title}
+              company={company}
+              companyEmail={companyEmail}
+              companyPhone={companyPhone}
+              client={client}
+              clientEmail={clientEmail}
+              clientCompany={clientCompany}
+              clientPhone={clientPhone}
+              notes={notes}
+              items={items}
+              customColumns={customColumns}
+              status={status}
+              documentDate={previewDocDate}
+              showPrice={displaySettings.showPrice}
+              showTotal={displaySettings.showTotal}
+              showDescription={displaySettings.showDescription}
+              showDeliveryTime={displaySettings.showDeliveryTime}
+              currency={displaySettings.currency}
+              spacing={displaySettings.spacing}
+              accentColor={displaySettings.accentColor}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1251,6 +1613,7 @@ interface ItemsGridProps {
   currency: Currency;
   onAddItem: (afterIndex?: number) => void;
   onDeleteItem: (id: string) => void;
+  onDuplicateItem: (id: string) => void;
   onMoveItem: (fromId: string, toId: string) => void;
   onUpdateField: (id: string, field: FixedColKey, value: string | number) => void;
   onUpdateAttr: (id: string, colId: string, value: string) => void;
@@ -1268,6 +1631,7 @@ function ItemsGrid({
   currency,
   onAddItem,
   onDeleteItem,
+  onDuplicateItem,
   onMoveItem,
   onUpdateField,
   onUpdateAttr,
@@ -1277,6 +1641,7 @@ function ItemsGrid({
   onDeleteColumn,
 }: ItemsGridProps) {
   const t = useT();
+  const [keyboardTipsOpen, setKeyboardTipsOpen] = useState(false);
   const [showAddCol, setShowAddCol] = useState(false);
   const [addColLabel, setAddColLabel] = useState("");
   const [editColId, setEditColId] = useState<string | null>(null);
@@ -1375,13 +1740,35 @@ function ItemsGrid({
   }
 
   return (
-    <div className="overflow-x-auto border-b border-zinc-800">
-      <table className="w-full text-sm border-collapse">
+    <div className="border-b border-zinc-800">
+      <div className="px-4 sm:px-6 pt-3 pb-2">
+        <button
+          type="button"
+          onClick={() => setKeyboardTipsOpen((o) => !o)}
+          className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <Keyboard className="h-3.5 w-3.5 shrink-0" />
+          {t("keyboard_tips_title")}
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 transition-transform",
+              keyboardTipsOpen && "rotate-90"
+            )}
+          />
+        </button>
+        {keyboardTipsOpen && (
+          <p className="mt-2 text-xs text-zinc-600 leading-relaxed max-w-xl">
+            {t("keyboard_tips_body")}
+          </p>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
         {/* ── Header ─────────────────────────────────────────────────── */}
         <thead>
           <tr className="border-b border-zinc-800 bg-zinc-900/60">
             {/* Row # */}
-            <th className="w-8 px-2 py-2 text-right text-[10px] font-medium text-zinc-600" />
+            <th className="w-8 px-2 py-2 text-right text-[10px] font-medium text-zinc-600 sticky left-0 z-20 bg-zinc-900/95 backdrop-blur-sm border-r border-zinc-800/80" />
 
             {/* Ordered visible columns (fixed and custom interleaved) */}
             {orderedVisibleCols.map((colConfig) => {
@@ -1391,9 +1778,13 @@ function ItemsGrid({
                 return (
                   <th
                     key={fixedCol.key}
-                    className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 ${
-                      fixedCol.thClass
-                    } ${fixedCol.align === "right" ? "text-right" : "text-left"}`}
+                    className={cn(
+                      "px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500",
+                      fixedCol.thClass,
+                      fixedCol.align === "right" ? "text-right" : "text-left",
+                      fixedCol.key === "name" &&
+                        "sticky left-8 z-[19] bg-zinc-900/95 backdrop-blur-sm border-r border-zinc-800/80"
+                    )}
                   >
                     {t(FIXED_COL_LABEL_KEYS[fixedCol.key])}
                   </th>
@@ -1486,7 +1877,7 @@ function ItemsGrid({
             <th className="w-[88px] px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
               {t("col_total")}
             </th>
-            <th className="w-8" />
+            <th className="w-[52px]" />
           </tr>
         </thead>
 
@@ -1505,6 +1896,7 @@ function ItemsGrid({
               onUpdateAttr={onUpdateAttr}
               onUpdateImage={onUpdateImage}
               onDelete={() => onDeleteItem(item.id)}
+              onDuplicate={() => onDuplicateItem(item.id)}
               onKeyDown={handleCellKeyDown}
               canDelete={items.length > 1}
               isDragOver={dragOverId === item.id}
@@ -1539,6 +1931,7 @@ function ItemsGrid({
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }
@@ -1560,6 +1953,7 @@ interface ItemRowProps {
   onUpdateField: (id: string, field: FixedColKey, value: string | number) => void;
   onUpdateAttr: (id: string, colId: string, value: string) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onKeyDown: (
     e: KeyboardEvent<HTMLInputElement>,
     rowIndex: number,
@@ -1585,6 +1979,7 @@ function ItemRow({
   onUpdateAttr,
   onUpdateImage,
   onDelete,
+  onDuplicate,
   onKeyDown,
   onDragOver,
   onDragLeave,
@@ -1609,7 +2004,7 @@ function ItemRow({
       onDrop={(e) => { e.preventDefault(); onDrop(e.dataTransfer.getData("text/plain")); }}
     >
       {/* Drag handle + row number */}
-      <td className="w-8 px-1 select-none">
+      <td className="w-8 px-1 select-none sticky left-0 z-20 bg-zinc-950/95 backdrop-blur-sm border-r border-zinc-800/80">
         <div className="flex items-center justify-end gap-0.5">
           <span className="cursor-grab active:cursor-grabbing text-zinc-700 hover:text-zinc-400 opacity-0 group-hover/row:opacity-100 transition-opacity">
             <GripVertical className="h-3.5 w-3.5" />
@@ -1664,7 +2059,15 @@ function ItemRow({
           const rawValue = item[fixedCol.key];
           const value = rawValue as string | number;
           return (
-            <td key={fixedCol.key} className={`px-1 py-0.5 ${fixedCol.thClass}`}>
+            <td
+              key={fixedCol.key}
+              className={cn(
+                "px-1 py-0.5",
+                fixedCol.thClass,
+                fixedCol.key === "name" &&
+                  "sticky left-8 z-[19] bg-zinc-950/95 backdrop-blur-sm border-r border-zinc-800/80"
+              )}
+            >
               <input
                 ref={refCallback(rowIndex, fixedCol.key)}
                 type={fixedCol.inputType}
@@ -1715,16 +2118,27 @@ function ItemRow({
         {formatWithCurrency(lineTotal, currency)}
       </td>
 
-      {/* Delete */}
-      <td className="w-8 px-1">
-        <button
-          onClick={onDelete}
-          disabled={!canDelete}
-          className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 disabled:invisible transition-all"
-          title={t("delete_row")}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+      {/* Duplicate + delete */}
+      <td className="w-[52px] px-0.5">
+        <div className="flex items-center justify-end gap-0">
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className="rounded p-1 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-all"
+            title={t("duplicate")}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={!canDelete}
+            className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 disabled:invisible transition-all"
+            title={t("delete_row")}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </td>
     </tr>
   );

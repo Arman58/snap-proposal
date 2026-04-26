@@ -25,6 +25,8 @@ interface ProposalPreviewProps {
   items: LineItem[];
   customColumns: CustomColumn[];
   status: ProposalStatus;
+  /** ISO date `yyyy-mm-dd` — same source as the view/PDF document date. */
+  documentDate: string;
   showPrice?: boolean;
   showTotal?: boolean;
   showDescription?: boolean;
@@ -47,6 +49,7 @@ export function ProposalPreview({
   items,
   customColumns,
   status,
+  documentDate,
   showPrice = true,
   showTotal = true,
   showDescription = true,
@@ -60,7 +63,7 @@ export function ProposalPreview({
   const visibleItems = items.filter((i) => i.name.trim() !== "");
 
   const dateLocale = locale === "ru" ? "ru-RU" : "en-US";
-  const today = new Date().toLocaleDateString(dateLocale, {
+  const proposalDateLabel = new Date(documentDate + "T12:00:00").toLocaleDateString(dateLocale, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -141,7 +144,7 @@ export function ProposalPreview({
         </div>
         <div className="shrink-0 text-right">
           <p className="text-[7px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">{t("proposal_date")}</p>
-          <p className="text-[9px] text-gray-500">{today}</p>
+          <p className="text-[9px] text-gray-500">{proposalDateLabel}</p>
         </div>
       </div>
 

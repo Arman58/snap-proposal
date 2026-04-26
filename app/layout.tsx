@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Nav } from "@/components/layout/nav";
+import { SiteShell } from "@/components/layout/site-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/toaster";
@@ -23,8 +23,7 @@ export default function RootLayout({
       >
         <I18nProvider>
           <TooltipProvider>
-            <Nav />
-            <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+            <SiteShell>{children}</SiteShell>
           </TooltipProvider>
         </I18nProvider>
         <Toaster />

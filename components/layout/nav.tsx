@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { StickyNote, Plus, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
