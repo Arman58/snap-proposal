@@ -19,23 +19,54 @@ export interface LineItem {
   qty: number;
   unit: string;
   unitPrice: number;
+  /** Per-row product image stored as a data URL */
+  imageUrl: string;
+  /** Estimated delivery time (free-form text, e.g. "3–5 days") */
+  deliveryTime: string;
   /** Values for each custom column keyed by CustomColumn.id */
   attrs: Record<string, string>;
 }
+
+export type Currency = "AMD" | "RUB" | "USD";
+
+export interface DisplaySettings {
+  showPrice: boolean;
+  showTotal: boolean;
+  showDescription: boolean;
+  showDeliveryTime: boolean;
+  currency: Currency;
+  spacing: "compact" | "comfortable";
+  accentColor: string;
+}
+
+export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  showPrice: true,
+  showTotal: true,
+  showDescription: true,
+  showDeliveryTime: true,
+  currency: "USD",
+  spacing: "comfortable",
+  accentColor: "#6366f1",
+};
 
 export interface Proposal {
   id: string;
   title: string;
   /** The business issuing this proposal */
   company: string;
+  companyEmail?: string;
+  companyPhone?: string;
   client: string;
   clientEmail: string;
+  clientCompany?: string;
+  clientPhone?: string;
   status: ProposalStatus;
   createdAt: string;
   updatedAt: string;
   notes: string;
   items: LineItem[];
   customColumns: CustomColumn[];
+  displaySettings?: DisplaySettings;
 }
 
 interface ProposalsState {
@@ -48,7 +79,12 @@ interface ProposalsState {
 
 /** Ensure items loaded from localStorage (before attrs was added) always have attrs. */
 function normalizeItems(items: LineItem[]): LineItem[] {
-  return items.map((i) => ({ ...i, attrs: i.attrs ?? {} }));
+  return items.map((i) => ({
+    ...i,
+    imageUrl: i.imageUrl ?? "",
+    deliveryTime: i.deliveryTime ?? "",
+    attrs: i.attrs ?? {},
+  }));
 }
 
 export const useProposalsStore = create<ProposalsState>()(
@@ -95,6 +131,21 @@ export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+const CURRENCY_LOCALE: Record<Currency, string> = {
+  USD: "en-US",
+  RUB: "ru-RU",
+  AMD: "hy-AM",
+};
+
+export function formatWithCurrency(amount: number, currency: Currency = "USD"): string {
+  return new Intl.NumberFormat(CURRENCY_LOCALE[currency], {
+    style: "currency",
+    currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);

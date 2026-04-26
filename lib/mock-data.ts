@@ -23,6 +23,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 48,
         unit: "pcs",
         unitPrice: 38,
+        imageUrl: "", deliveryTime: "2 weeks",
         attrs: { "cc-warranty": "3 years", "cc-lead": "2 weeks" },
       },
       {
@@ -32,6 +33,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 12,
         unit: "pcs",
         unitPrice: 65,
+        imageUrl: "", deliveryTime: "1 week",
         attrs: { "cc-warranty": "2 years", "cc-lead": "1 week" },
       },
       {
@@ -41,6 +43,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 4,
         unit: "floors",
         unitPrice: 450,
+        imageUrl: "", deliveryTime: "On-site",
         attrs: { "cc-warranty": "—", "cc-lead": "On-site" },
       },
     ],
@@ -64,6 +67,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 5,
         unit: "pcs",
         unitPrice: 1200,
+        imageUrl: "", deliveryTime: "6 weeks",
         attrs: { "cc-color": "Natural Oak" },
       },
       {
@@ -73,6 +77,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 30,
         unit: "pcs",
         unitPrice: 185,
+        imageUrl: "", deliveryTime: "6 weeks",
         attrs: { "cc-color": "Fabric TBC" },
       },
     ],
@@ -96,6 +101,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 1,
         unit: "lot",
         unitPrice: 24000,
+        imageUrl: "", deliveryTime: "12 weeks",
         attrs: {},
       },
       {
@@ -105,6 +111,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 320,
         unit: "sqm",
         unitPrice: 42,
+        imageUrl: "", deliveryTime: "4 weeks",
         attrs: {},
       },
       {
@@ -114,6 +121,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
         qty: 1,
         unit: "lot",
         unitPrice: 8500,
+        imageUrl: "", deliveryTime: "On-site",
         attrs: {},
       },
     ],

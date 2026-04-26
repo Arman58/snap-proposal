@@ -25,7 +25,7 @@ const FLAG: Record<Locale, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function LanguageSwitcher() {
-  const { locale, setLocale } = useI18n();
+  const { locale, setLocale, t } = useI18n();
 
   return (
     <DropdownMenu>
@@ -34,7 +34,7 @@ export function LanguageSwitcher() {
           variant="ghost"
           size="sm"
           className="h-8 gap-1.5 px-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 focus-visible:ring-0"
-          aria-label="Switch language"
+          aria-label={t("switch_language")}
         >
           <span className="text-base leading-none">{FLAG[locale]}</span>
           <span className="text-[11px] font-semibold tracking-widest uppercase">
