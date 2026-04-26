@@ -158,7 +158,7 @@
   "preview_resize_handle": "Drag to change width (right edge stays in place)",
   "preview_resize_height_handle": "Drag to change height",
   "preview_drag_to_move": "Drag to move the preview",
-  "col_unit_placeholder": "pcs",
+  "col_unit_placeholder": "шт",
   "relative_today": "Today",
   "relative_yesterday": "Yesterday",
   "relative_days_ago": "{n} days ago",

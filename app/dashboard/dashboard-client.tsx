@@ -42,11 +42,18 @@ import { useT } from "@/lib/i18n";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
-const STATUS_DOT: Record<ProposalStatus, string> = {
-  draft: "bg-zinc-500",
-  sent: "bg-blue-400",
-  accepted: "bg-emerald-400",
-  declined: "bg-red-400",
+// MO-10: shape + color encoding so status is never color-only (WCAG SC 1.4.1)
+const STATUS_SHAPE: Record<ProposalStatus, string> = {
+  draft: "○",    // circle unfilled
+  sent: "→",     // arrow
+  accepted: "✓", // check
+  declined: "✗", // cross
+};
+const STATUS_COLOR: Record<ProposalStatus, string> = {
+  draft: "text-zinc-500",
+  sent: "text-blue-400",
+  accepted: "text-emerald-400",
+  declined: "text-red-400",
 };
 
 const STATUS_BADGE: Record<ProposalStatus, string> = {
@@ -386,6 +393,16 @@ function ColumnManagerDropdown({
   );
 }
 
+// PT-02: Loss-aversion nudge for stale Draft/Sent proposals (> 2 days idle)
+// Kahneman: framing inaction as potential loss is 2× more motivating than gain framing.
+function getStalenessNudge(status: ProposalStatus, updatedAt: string): string | null {
+  if (status !== "draft" && status !== "sent") return null;
+  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000);
+  if (days < 2) return null;
+  if (status === "sent") return days < 7 ? `${days}d — follow up?` : `${days}d no reply`;
+  return days < 7 ? `${days}d unsent` : `${days}d idle`;
+}
+
 // ─── Relative date ────────────────────────────────────────────────────────────
 
 function formatRelativeDate(dateStr: string, t: (key: string) => string): string {
@@ -666,12 +683,17 @@ export function DashboardClient() {
                       href={`/proposal/${proposal.id}`}
                       className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-md -m-1 p-1 outline-none hover:bg-zinc-800/30 focus-visible:ring-2 focus-visible:ring-[var(--theme-color)] transition-colors"
                     >
-                      <div
+                      {/* MO-10: shape glyph carries both color AND shape information */}
+                      <span
                         className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
-                          STATUS_DOT[proposal.status]
+                          "shrink-0 text-[11px] font-bold leading-none select-none",
+                          STATUS_COLOR[proposal.status]
                         )}
-                      />
+                        aria-label={proposal.status}
+                        title={proposal.status}
+                      >
+                        {STATUS_SHAPE[proposal.status]}
+                      </span>
 
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-zinc-100 group-hover:text-white transition-colors">
@@ -691,6 +713,7 @@ export function DashboardClient() {
                                       "inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
                                       STATUS_BADGE[proposal.status]
                                     )}
+                                    title={proposal.status}
                                   >
                                     {t(proposal.status)}
                                   </span>
@@ -702,7 +725,17 @@ export function DashboardClient() {
                                     {proposal.items.length === 1 ? t("item") : t("items")}
                                   </>
                                 )}
-                                {col.id === "date" && formatRelativeDate(proposal.updatedAt, t)}
+                                {col.id === "date" && (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span>{formatRelativeDate(proposal.updatedAt, t)}</span>
+                                    {/* PT-02: loss-aversion nudge for stale proposals */}
+                                    {getStalenessNudge(proposal.status, proposal.updatedAt) && (
+                                      <span className="text-amber-400/90 font-medium">
+                                        — {getStalenessNudge(proposal.status, proposal.updatedAt)}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
                               </span>
                             ))}
                           </p>

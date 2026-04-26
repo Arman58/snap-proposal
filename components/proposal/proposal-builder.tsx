@@ -27,6 +27,8 @@ import {
   Copy,
   ChevronRight,
   Keyboard,
+  Bookmark,
+  BookmarkCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { nanoid } from "@/lib/nanoid";
@@ -63,7 +65,6 @@ import {
   type DocumentFont,
 } from "@/store/proposals";
 import { ProposalDocument } from "./proposal-document";
-import { PRODUCT_CATALOG } from "@/lib/mock-data";
 import { useI18n, useT } from "@/lib/i18n";
 import { useProposalImage } from "@/lib/use-proposal-image";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,16 @@ const SYNC_THEME_KEY = "snap-sync-theme-accent";
 const THEME_COLOR_KEY = "app-theme-color";
 
 const PREVIEW_PANEL_STORAGE_KEY = "snap-preview-panel-v1";
+const CATALOG_OPEN_KEY = "snap-catalog-open-v1";
+const USER_CATALOG_KEY = "snap-user-catalog-v1"; // MO-6: user-saved catalog items
+
+// QW-10 / VH-04: colored left-border on status select (Von Restorff Effect)
+const STATUS_HEX: Record<string, string> = {
+  draft: "#71717a",
+  sent: "#60a5fa",
+  accepted: "#34d399",
+  declined: "#f87171",
+};
 const DEFAULT_PREVIEW_WIDTH = 360;
 const PREVIEW_PANEL_MARGIN = 20;
 const MIN_PREVIEW_WIDTH = 280;
@@ -245,10 +256,10 @@ const FIXED_COLS: FixedColConfig[] = [
   {
     key: "unit",
     label: "Unit",
-    thClass: "w-16",
+    thClass: "w-20",
     inputType: "text",
     align: "left",
-    placeholder: "pcs",
+    placeholder: "шт",
   },
   {
     key: "unitPrice",
@@ -272,6 +283,28 @@ const FIXED_COL_MAP = new Map<string, FixedColConfig>(
   FIXED_COLS.map((c) => [c.key, c])
 );
 
+/** Unit dropdown options for the unit column. */
+const UNIT_OPTIONS = ["шт", "м", "м.п.", "м²", "кг", "л", "компл.", "услуг.", "—"];
+
+// ─── MO-6: User catalog (localStorage-backed) ─────────────────────────────────
+interface UserCatalogItem {
+  id: string;
+  name: string;
+  unit: string;
+  unitPrice: number;
+}
+function loadUserCatalog(): UserCatalogItem[] {
+  try {
+    const raw = localStorage.getItem(USER_CATALOG_KEY);
+    return raw ? (JSON.parse(raw) as UserCatalogItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+function persistUserCatalog(items: UserCatalogItem[]) {
+  try { localStorage.setItem(USER_CATALOG_KEY, JSON.stringify(items)); } catch { /* ignore */ }
+}
+
 // ─── Column Manager: defaults + localStorage helpers ──────────────────────────
 
 const COL_STORAGE_KEY = "snap-proposal-col-configs";
@@ -281,7 +314,7 @@ const DEFAULT_FIXED_COL_CONFIGS: ColumnConfig[] = [
   { id: "name",          label: "Product / Service", visible: true,  order: 1, alwaysVisible: true },
   { id: "description",   label: "Description",       visible: true,  order: 2 },
   { id: "qty",           label: "Qty",               visible: true,  order: 3 },
-  { id: "unit",          label: "Unit",              visible: false, order: 4 },
+  { id: "unit",          label: "Unit",              visible: true,  order: 4 }, // QW-3: units are mission-critical
   { id: "unitPrice",     label: "Price",             visible: true,  order: 5, alwaysVisible: true },
   { id: "deliveryTime",  label: "Delivery Time",     visible: true,  order: 6 },
 ];
@@ -342,7 +375,7 @@ function emptyItem(customColumns: CustomColumn[]): LineItem {
     name: "",
     description: "",
     qty: 1,
-    unit: "pcs",
+    unit: "шт",
     unitPrice: 0,
     imageUrl: "",
     deliveryTime: "",
@@ -562,7 +595,8 @@ function ColumnManagerDropdown({ configs, onChange, onAddColumn }: ColumnManager
   );
 }
 
-// ─── Final Settings Dropdown ──────────────────────────────────────────────────
+// ─── Final Settings Dropdown (MO-2: split into Document / Style tabs) ────────
+// Miller's Law: max 7 items per tab. Two tabs × ≤7 items each vs previous 14+ in one scroll.
 
 interface FinalSettingsDropdownProps {
   settings: DisplaySettings;
@@ -579,6 +613,7 @@ function FinalSettingsDropdown({
 }: FinalSettingsDropdownProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"document" | "style">("document");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -605,147 +640,205 @@ function FinalSettingsDropdown({
 
   const currencies: Currency[] = ["USD", "RUB", "AMD"];
 
+  // Named color anchors for psychological anchoring (PT-04)
+  const COLOR_PRESETS: { hex: string; label: string }[] = [
+    { hex: "#18181b", label: "Pro" },
+    { hex: "#1e40af", label: "Corp" },
+    { hex: "#065f46", label: "Growth" },
+    { hex: "#7c3aed", label: "Bold" },
+    { hex: "#be123c", label: "Urgent" },
+    { hex: "#b45309", label: "Warm" },
+    { hex: "#0e7490", label: "Trust" },
+    { hex: "#374151", label: "Clean" },
+  ];
+
   return (
     <div ref={containerRef} className="relative shrink-0">
       <Button
         variant="ghost"
-        size="sm"
+        size="icon"
         onClick={() => setOpen((v) => !v)}
-        className={`h-8 px-2.5 text-xs font-medium transition-colors ${
+        className={`h-9 w-9 transition-colors ${
           open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"
         }`}
+        title={t("settings")}
       >
-        <Settings2 className="h-3.5 w-3.5 mr-1" />
-        {t("settings")}
+        <Settings2 className="h-4 w-4" />
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-52 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
-          <div className="px-3 pt-2.5 pb-1.5 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              {t("document_settings")}
-            </p>
-          </div>
-
-          {/* Visibility toggles */}
-          <div className="px-1.5 py-1.5 border-b border-zinc-800">
-            {toggleItems.map(({ key, labelKey }) => (
-              <div
-                key={key}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-800/60 transition-colors"
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
+          {/* Tab bar — role="tablist" for a11y */}
+          <div role="tablist" className="flex border-b border-zinc-800">
+            {(["document", "style"] as const).map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                  activeTab === tab
+                    ? "text-zinc-100 border-b-2 border-blue-500"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
               >
-                <input
-                  type="checkbox"
-                  id={`fs-${key}`}
-                  checked={settings[key] as boolean}
-                  onChange={() => toggle(key as keyof Pick<DisplaySettings, "showPrice" | "showTotal" | "showDescription" | "showDeliveryTime">)}
-                  className="h-3.5 w-3.5 accent-blue-500 cursor-pointer shrink-0"
-                />
-                <label htmlFor={`fs-${key}`} className="flex-1 text-sm text-zinc-200 cursor-pointer select-none">
-                  {t(labelKey)}
-                </label>
-              </div>
+                {tab === "document" ? "Document" : "Style"}
+              </button>
             ))}
           </div>
 
-          {/* Currency */}
-          <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
-              {t("currency_label")}
-            </p>
-            <div className="flex gap-1">
-              {currencies.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => onChange({ ...settings, currency: c })}
-                  className={`flex-1 rounded px-1.5 py-1 text-xs font-medium transition-colors ${
-                    settings.currency === c
-                      ? "bg-blue-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* ── Document tab: content decisions (≤7 items) ── */}
+          {activeTab === "document" && (
+            <>
+              {/* Visibility toggles */}
+              <div className="px-1.5 py-1.5 border-b border-zinc-800">
+                {toggleItems.map(({ key, labelKey }) => (
+                  <div
+                    key={key}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-800/60 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      id={`fs-${key}`}
+                      checked={settings[key] as boolean}
+                      onChange={() => toggle(key as keyof Pick<DisplaySettings, "showPrice" | "showTotal" | "showDescription" | "showDeliveryTime">)}
+                      className="h-3.5 w-3.5 accent-blue-500 cursor-pointer shrink-0"
+                    />
+                    <label htmlFor={`fs-${key}`} className="flex-1 text-sm text-zinc-200 cursor-pointer select-none">
+                      {t(labelKey)}
+                    </label>
+                  </div>
+                ))}
+              </div>
 
-          {/* Spacing */}
-          <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
-              {t("spacing_label")}
-            </p>
-            <div className="flex gap-1">
-              {(["compact", "comfortable"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => onChange({ ...settings, spacing: s })}
-                  className={`flex-1 rounded px-1.5 py-1 text-xs font-medium transition-colors ${
-                    settings.spacing === s
-                      ? "bg-blue-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  {s === "compact" ? t("spacing_compact") : t("spacing_comfortable")}
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Currency */}
+              <div className="px-3 py-2 border-b border-zinc-800">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+                  {t("currency_label")}
+                </p>
+                <div className="flex gap-1">
+                  {currencies.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => onChange({ ...settings, currency: c })}
+                      className={`flex-1 rounded px-1.5 py-1 text-xs font-medium transition-colors ${
+                        settings.currency === c
+                          ? "bg-blue-600 text-white"
+                          : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Document font */}
-          <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
-              {t("document_font")}
-            </p>
-            <div className="grid grid-cols-3 gap-1">
-              {(["inter", "system", "serif"] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => onChange({ ...settings, documentFont: f as DocumentFont })}
-                  className={`rounded px-1 py-1.5 text-[10px] font-medium leading-tight transition-colors ${
-                    (settings.documentFont ?? "inter") === f
-                      ? "bg-blue-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  {f === "inter" && t("font_inter")}
-                  {f === "system" && t("font_system")}
-                  {f === "serif" && t("font_serif")}
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Spacing */}
+              <div className="px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+                  {t("spacing_label")}
+                </p>
+                <div className="flex gap-1">
+                  {(["compact", "comfortable"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => onChange({ ...settings, spacing: s })}
+                      className={`flex-1 rounded px-1.5 py-1 text-xs font-medium transition-colors ${
+                        settings.spacing === s
+                          ? "bg-blue-600 text-white"
+                          : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {s === "compact" ? t("spacing_compact") : t("spacing_comfortable")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Accent color */}
-          <div className="px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
-              {t("accent_color")}
-            </p>
-            <label className="flex items-center gap-2.5 cursor-pointer group">
-              <span
-                className="h-6 w-6 rounded-full border-2 border-white/20 group-hover:border-white/40 shrink-0 transition-colors"
-                style={{ backgroundColor: settings.accentColor }}
-              />
-              <input
-                type="color"
-                value={settings.accentColor}
-                onChange={(e) => onChange({ ...settings, accentColor: e.target.value })}
-                onInput={(e) => onChange({ ...settings, accentColor: (e.target as HTMLInputElement).value })}
-                className="sr-only"
-              />
-              <span className="text-xs text-zinc-400 font-mono">{settings.accentColor}</span>
-            </label>
-            <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={syncThemeAccent}
-                onChange={(e) => onSyncThemeAccentChange(e.target.checked)}
-                className="h-3.5 w-3.5 accent-blue-500"
-              />
-              <span className="text-xs text-zinc-400">{t("sync_theme_accent")}</span>
-            </label>
-          </div>
+          {/* ── Style tab: aesthetics (≤7 items) ── */}
+          {activeTab === "style" && (
+            <>
+              {/* Document font */}
+              <div className="px-3 py-2 border-b border-zinc-800">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+                  {t("document_font")}
+                </p>
+                <div className="grid grid-cols-3 gap-1">
+                  {(["inter", "system", "serif"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => onChange({ ...settings, documentFont: f as DocumentFont })}
+                      className={`rounded px-1 py-1.5 text-[10px] font-medium leading-tight transition-colors ${
+                        (settings.documentFont ?? "inter") === f
+                          ? "bg-blue-600 text-white"
+                          : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {f === "inter" && t("font_inter")}
+                      {f === "system" && t("font_system")}
+                      {f === "serif" && t("font_serif")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Accent color with named presets (PT-04) */}
+              <div className="px-3 py-2 border-b border-zinc-800">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+                  {t("accent_color")}
+                </p>
+                <div className="grid grid-cols-4 gap-2 mb-2">
+                  {COLOR_PRESETS.map(({ hex, label }) => (
+                    <label key={hex} className="flex flex-col items-center gap-0.5 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => onChange({ ...settings, accentColor: hex })}
+                        title={`${label} — ${hex}`}
+                        className="h-6 w-6 rounded-full border-2 transition-all hover:scale-110 focus:outline-none"
+                        style={{
+                          backgroundColor: hex,
+                          borderColor: settings.accentColor === hex ? "white" : "transparent",
+                          boxShadow: settings.accentColor === hex ? `0 0 0 2px ${hex}` : undefined,
+                        }}
+                      />
+                      <span className="text-[8px] text-zinc-600 leading-none">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer group">
+                  <span
+                    className="h-6 w-6 rounded-full border-2 border-white/20 group-hover:border-white/40 shrink-0 transition-colors"
+                    style={{ backgroundColor: settings.accentColor }}
+                  />
+                  <input
+                    type="color"
+                    value={settings.accentColor}
+                    aria-label="Accent color for this proposal"
+                    onChange={(e) => onChange({ ...settings, accentColor: e.target.value })}
+                    onInput={(e) => onChange({ ...settings, accentColor: (e.target as HTMLInputElement).value })}
+                    className="sr-only"
+                  />
+                  <span className="text-xs text-zinc-400 font-mono">{settings.accentColor}</span>
+                </label>
+              </div>
+
+              {/* Sync accent */}
+              <div className="px-3 py-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={syncThemeAccent}
+                    onChange={(e) => onSyncThemeAccentChange(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-blue-500"
+                  />
+                  <span className="text-xs text-zinc-400">{t("sync_theme_accent")}</span>
+                </label>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -796,6 +889,11 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const skipColConfigPersistOnce = useRef(true);
 
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false); // MO-3: post-save "Saved ✓" state
+  const [autosaveAt, setAutosaveAt] = useState<Date | null>(null); // MO-7: autosave timestamp
+  const [userCatalog, setUserCatalog] = useState<UserCatalogItem[]>([]); // MO-6: user catalog
+  const [catalogOpen, setCatalogOpen] = useState(true);
+  const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set()); // QW-5: animate catalog-added rows
   const [previewOpen, setPreviewOpen] = useState(true);
   const [previewLayout, setPreviewLayout] = useState<PreviewPanelLayout | null>(null);
   const previewPanelRef = useRef<HTMLDivElement | null>(null);
@@ -869,6 +967,23 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const total = proposalTotal(items);
   const canSave = title.trim() !== "" && client.trim() !== "";
   const hasNamedLineItem = items.some((i) => i.name.trim() !== "");
+
+  // MO-4: Goal-gradient completeness (4 milestones × 25%)
+  const completeness = useMemo(() => {
+    let score = 0;
+    if (title.trim()) score += 25;
+    if (client.trim()) score += 25;
+    if (items.some((i) => i.name.trim())) score += 25;
+    if (items.some((i) => i.unitPrice > 0)) score += 25;
+    return score;
+  }, [title, client, items]);
+
+  // MO-7: format autosave timestamp as "Xm ago" / "just now"
+  const autosaveLabel = useMemo(() => {
+    if (!autosaveAt) return null;
+    const mins = Math.floor((Date.now() - autosaveAt.getTime()) / 60000);
+    return mins < 1 ? "Draft saved" : `Draft saved ${mins}m ago`;
+  }, [autosaveAt]);
 
   const buildSnapshot = useCallback(
     () =>
@@ -1093,6 +1208,55 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   }, []);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(CATALOG_OPEN_KEY);
+      if (stored !== null) setCatalogOpen(stored === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleCatalog() {
+    const next = !catalogOpen;
+    setCatalogOpen(next);
+    try {
+      localStorage.setItem(CATALOG_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // MO-6: Load user catalog on mount
+  useEffect(() => {
+    setUserCatalog(loadUserCatalog());
+  }, []);
+
+  // MO-6: Save-to-catalog handler
+  const saveToCatalog = useCallback((item: LineItem) => {
+    if (!item.name.trim()) return;
+    setUserCatalog((prev) => {
+      // Avoid exact duplicates (same name + unit + price)
+      if (prev.some((c) => c.name === item.name && c.unit === item.unit && c.unitPrice === item.unitPrice)) {
+        return prev;
+      }
+      const next: UserCatalogItem[] = [
+        ...prev,
+        { id: nanoid(), name: item.name, unit: item.unit, unitPrice: item.unitPrice },
+      ];
+      persistUserCatalog(next);
+      return next;
+    });
+  }, []);
+
+  const removeFromUserCatalog = useCallback((id: string) => {
+    setUserCatalog((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      persistUserCatalog(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
     if (!syncThemeAccent) return;
     document.documentElement.style.setProperty("--theme-color", displaySettings.accentColor);
     try {
@@ -1250,6 +1414,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             ...parsed,
           })
         );
+        setAutosaveAt(new Date()); // MO-7: record timestamp for "Draft saved Xm ago"
       } catch {
         /* ignore */
       }
@@ -1408,10 +1573,20 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
     (name: string, unit: string, unitPrice: number) => {
       const attrs: Record<string, string> = {};
       customColumns.forEach((c) => (attrs[c.id] = ""));
+      const newId = nanoid();
       setItems((prev) => [
         ...prev,
-        { id: nanoid(), name, description: "", qty: 1, unit, unitPrice, imageUrl: "", deliveryTime: "", attrs },
+        { id: newId, name, description: "", qty: 1, unit, unitPrice, imageUrl: "", deliveryTime: "", attrs },
       ]);
+      // QW-5: track new ID for row-in animation; clear after 600ms
+      setNewItemIds((prev) => new Set([...prev, newId]));
+      setTimeout(() => {
+        setNewItemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(newId);
+          return next;
+        });
+      }, 600);
     },
     [customColumns]
   );
@@ -1454,7 +1629,12 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           displaySettings,
         });
         lastSavedRef.current = buildSnapshot();
-        router.push(`/proposal/${initialId}`);
+        // MO-3: show "Saved ✓" for 1.5s then navigate
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          router.push(`/proposal/${initialId}`);
+        }, 1200);
       } else {
         const id = `prop-${nanoid()}`;
         addProposal({
@@ -1476,7 +1656,11 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
           updatedAt: now,
         });
         lastSavedRef.current = buildSnapshot();
-        router.push(`/proposal/${id}`);
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          router.push(`/proposal/${id}`);
+        }, 1200);
       }
     } finally {
       setSaving(false);
@@ -1487,91 +1671,145 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
 
   return (
     <div className="-mx-4 sm:-mx-6 -mt-8">
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div className="sticky top-[52px] z-30 flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur px-4 py-2.5 sm:px-6">
-        <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/dashboard">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
+      {/* ── Top bar (MO-1: left=nav, center=identity, right=ranked actions) ── */}
+      <div className="sticky top-[52px] z-30 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur">
+        <div className="flex items-center gap-2 px-4 py-2 sm:px-6">
 
-        <input
-          placeholder={t("untitled_proposal")}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-zinc-100 placeholder:text-zinc-600 outline-none focus:text-zinc-100"
-        />
+          {/* LEFT: navigation only */}
+          <Button variant="ghost" size="icon" asChild className="shrink-0 h-9 w-9">
+            <Link href="/dashboard" aria-label="Back to dashboard">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
 
-        {/* Preview toggle — desktop */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setPreviewOpen((v) => !v)}
-          className="shrink-0 hidden lg:flex"
-          title={previewOpen ? t("hide_preview") : t("show_preview")}
-        >
-          {previewOpen ? (
-            <EyeOff className="h-4 w-4" />
-          ) : (
-            <Eye className="h-4 w-4" />
-          )}
-        </Button>
+          {/* CENTER: identity — title + status */}
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            {/* QW-4: sr-only label so screen readers announce the field (WCAG SC 4.1.2) */}
+            <label htmlFor="proposal-title" className="sr-only">
+              {t("proposal_title")}
+            </label>
+            <input
+              id="proposal-title"
+              placeholder={t("untitled_proposal")}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-100
+                         placeholder:text-zinc-600 outline-none
+                         border-b border-transparent hover:border-zinc-700 focus:border-zinc-500
+                         transition-colors"
+            />
 
-        {/* Preview — mobile / tablet */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0 lg:hidden h-8 gap-1.5"
-          onClick={() => setMobilePreviewOpen(true)}
-        >
-          <Eye className="h-3.5 w-3.5" />
-          {t("open_preview")}
-        </Button>
+            {/* QW-10: colored left border on status select (Von Restorff) */}
+            <Select value={status} onValueChange={(v) => setStatus(v as ProposalStatus)}>
+              <SelectTrigger
+                className="w-28 shrink-0 border-l-4 pl-2 h-8 text-xs"
+                style={{ borderLeftColor: STATUS_HEX[status] }}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">{t("draft")}</SelectItem>
+                <SelectItem value="sent">{t("sent")}</SelectItem>
+                <SelectItem value="accepted">{t("accepted")}</SelectItem>
+                <SelectItem value="declined">{t("declined")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Column manager */}
-        <ColumnManagerDropdown
-          configs={columnConfigs}
-          onChange={(newConfigs) => setColumnConfigs(newConfigs)}
-          onAddColumn={addColumn}
-        />
+          {/* RIGHT: ranked by Fitts's Law — primary first, then secondary icon-only */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* MO-7: autosave timestamp (Zeigarnik: completed autosave = peace of mind) */}
+            {autosaveLabel && !isDirty && (
+              <span className="hidden sm:inline text-[10px] text-zinc-600 whitespace-nowrap mr-1">
+                {autosaveLabel}
+              </span>
+            )}
+            {isDirty && (
+              <span className="hidden sm:inline text-xs text-amber-400/90 whitespace-nowrap mr-1">
+                {t("unsaved_changes")}
+              </span>
+            )}
 
-        {/* Final settings */}
-        <FinalSettingsDropdown
-          settings={displaySettings}
-          onChange={setDisplaySettings}
-          syncThemeAccent={syncThemeAccent}
-          onSyncThemeAccentChange={persistSyncThemeAccent}
-        />
+            {/* MO-3: Save button with "Saved ✓" confirmation state */}
+            <Button
+              onClick={handleSave}
+              disabled={saving || saveSuccess}
+              size="default"
+              className="shrink-0 min-w-[80px] h-9 text-sm font-semibold transition-all"
+              style={
+                saveSuccess
+                  ? { backgroundColor: "#059669", borderColor: "#059669" }
+                  : { backgroundColor: displaySettings.accentColor, borderColor: displaySettings.accentColor }
+              }
+            >
+              {saveSuccess ? (
+                <span className="flex items-center gap-1.5">
+                  <Check className="h-3.5 w-3.5" />
+                  Saved
+                </span>
+              ) : saving ? (
+                t("saving")
+              ) : isEdit ? (
+                t("save")
+              ) : (
+                t("create")
+              )}
+            </Button>
 
-        <Select
-          value={status}
-          onValueChange={(v) => setStatus(v as ProposalStatus)}
-        >
-          <SelectTrigger className="w-28 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="draft">{t("draft")}</SelectItem>
-            <SelectItem value="sent">{t("sent")}</SelectItem>
-            <SelectItem value="accepted">{t("accepted")}</SelectItem>
-            <SelectItem value="declined">{t("declined")}</SelectItem>
-          </SelectContent>
-        </Select>
+            {/* Settings dropdown (icon-only, secondary) */}
+            <FinalSettingsDropdown
+              settings={displaySettings}
+              onChange={setDisplaySettings}
+              syncThemeAccent={syncThemeAccent}
+              onSyncThemeAccentChange={persistSyncThemeAccent}
+            />
 
-        {isDirty && (
-          <span className="hidden sm:inline text-xs text-amber-400/90 whitespace-nowrap">
-            {t("unsaved_changes")}
-          </span>
+            {/* Column manager (icon-only, tertiary) */}
+            <ColumnManagerDropdown
+              configs={columnConfigs}
+              onChange={(newConfigs) => setColumnConfigs(newConfigs)}
+              onAddColumn={addColumn}
+            />
+
+            {/* Preview toggle — desktop (icon-only) */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setPreviewOpen((v) => !v)}
+              className="hidden lg:flex h-9 w-9"
+              title={previewOpen ? t("hide_preview") : t("show_preview")}
+            >
+              {previewOpen ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+
+            {/* Preview — mobile / tablet */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="lg:hidden h-8 gap-1.5"
+              onClick={() => setMobilePreviewOpen(true)}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {t("open_preview")}
+            </Button>
+          </div>
+        </div>
+
+        {/* MO-4: Completeness progress bar (Goal-Gradient Effect — Zeigarnik) */}
+        <div className="h-[3px] w-full bg-zinc-800">
+          <div
+            className="h-full transition-all duration-500 ease-out"
+            style={{
+              width: `${completeness}%`,
+              backgroundColor: completeness === 100 ? "#059669" : displaySettings.accentColor,
+            }}
+          />
+        </div>
+        {completeness === 100 && (
+          <div className="flex items-center justify-end px-4 sm:px-6 py-1 bg-emerald-950/30">
+            <span className="text-[10px] text-emerald-400 font-medium">✓ Ready to send</span>
+          </div>
         )}
-
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          size="sm"
-          className="shrink-0"
-        >
-          {saving ? t("saving") : isEdit ? t("save") : t("create")}
-        </Button>
       </div>
 
       {showSaveHints && !canSave && (
@@ -1698,37 +1936,72 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             onAddColumn={addColumn}
             onRenameColumn={renameColumn}
             onDeleteColumn={deleteColumn}
+            userCatalog={userCatalog}
+            onSaveToCatalog={saveToCatalog}
+            newItemIds={newItemIds}
           />
 
           {/* Catalog quick-add */}
-          <div className="border-t border-zinc-800 px-4 sm:px-6 py-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              {t("quick_add_catalog")}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
-              {PRODUCT_CATALOG.map((cat) => (
-                <div key={cat.category}>
-                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                    {cat.category}
+          <div className="border-t border-zinc-800">
+            {/* Catalog header with toggle */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                {t("quick_add_catalog")}
+              </p>
+              <button
+                type="button"
+                onClick={toggleCatalog}
+                className="flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-300 transition-colors rounded px-1.5 py-0.5 hover:bg-zinc-800"
+                title={catalogOpen ? "Collapse catalog" : "Expand catalog"}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-250",
+                    !catalogOpen && "-rotate-90"
+                  )}
+                />
+              </button>
+            </div>
+            {/* Collapsible content — MO-6: user-saved catalog */}
+            <div
+              style={{
+                maxHeight: catalogOpen ? "800px" : "0px",
+                overflow: "hidden",
+                transition: "max-height 280ms ease",
+              }}
+            >
+              <div className="px-4 sm:px-6 pb-5">
+                {userCatalog.length === 0 ? (
+                  <p className="text-xs text-zinc-600 italic py-1">
+                    Your saved products will appear here. Click{" "}
+                    <Bookmark className="inline h-3 w-3 mx-0.5" />
+                    on any row to save it.
                   </p>
+                ) : (
                   <div className="space-y-0.5">
-                    {cat.items.map((p) => (
-                      <button
-                        key={p.name}
-                        onClick={() =>
-                          addFromCatalog(p.name, p.unit, p.unitPrice)
-                        }
-                        className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs transition-colors hover:bg-zinc-800"
-                      >
-                        <span className="text-zinc-300">{p.name}</span>
-                        <span className="text-zinc-600">
-                          {formatWithCurrency(p.unitPrice, displaySettings.currency)}/{p.unit}
-                        </span>
-                      </button>
+                    {userCatalog.map((p) => (
+                      <div key={p.id} className="flex w-full items-center group/cat rounded hover:bg-zinc-800 transition-colors">
+                        <button
+                          onClick={() => addFromCatalog(p.name, p.unit, p.unitPrice)}
+                          className="flex flex-1 items-center justify-between px-2 py-1 text-left text-xs"
+                        >
+                          <span className="text-zinc-300">{p.name}</span>
+                          <span className="text-zinc-600">
+                            {formatWithCurrency(p.unitPrice, displaySettings.currency)}/{p.unit}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => removeFromUserCatalog(p.id)}
+                          className="mr-1.5 rounded p-1 text-zinc-700 hover:text-red-400 opacity-0 group-hover/cat:opacity-100 transition-all"
+                          title="Remove from catalog"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                )}
+              </div>
             </div>
           </div>
 
@@ -1771,78 +2044,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             )}
           </div>
 
-          {/* ── Color & Theme ──────────────────────────────────────────────── */}
-          <div className="px-4 sm:px-6 py-5 border-b border-zinc-800">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">
-              {t("accent_color")}
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Preset swatches */}
-              {[
-                "#18181b",
-                "#1e40af",
-                "#065f46",
-                "#7c3aed",
-                "#be123c",
-                "#b45309",
-                "#0e7490",
-                "#374151",
-              ].map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setDisplaySettings((s) => ({ ...s, accentColor: color }))}
-                  title={color}
-                  className="h-7 w-7 rounded-full border-2 transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-900"
-                  style={{
-                    backgroundColor: color,
-                    borderColor:
-                      displaySettings.accentColor === color
-                        ? "white"
-                        : "transparent",
-                    boxShadow:
-                      displaySettings.accentColor === color
-                        ? `0 0 0 2px ${color}`
-                        : undefined,
-                  }}
-                />
-              ))}
-
-              {/* Custom color picker */}
-              <label className="relative cursor-pointer group flex items-center gap-2">
-                <span
-                  className="h-7 w-7 rounded-full border-2 border-dashed border-zinc-600 group-hover:border-zinc-400 transition-colors flex items-center justify-center overflow-hidden"
-                  style={{ backgroundColor: displaySettings.accentColor }}
-                >
-                  <span className="text-[9px] font-bold text-white/70 select-none">+</span>
-                </span>
-                <input
-                  type="color"
-                  value={displaySettings.accentColor}
-                  onChange={(e) =>
-                    setDisplaySettings((s) => ({ ...s, accentColor: e.target.value }))
-                  }
-                  onInput={(e) =>
-                    setDisplaySettings((s) => ({
-                      ...s,
-                      accentColor: (e.target as HTMLInputElement).value,
-                    }))
-                  }
-                  className="sr-only"
-                />
-                <span className="text-xs text-zinc-500 font-mono group-hover:text-zinc-300 transition-colors">
-                  {displaySettings.accentColor}
-                </span>
-              </label>
-            </div>
-          </div>
-
-          {/* Footer actions */}
+          {/* Footer actions — Save is in top bar; only Cancel remains here */}
           <div className="flex justify-end gap-2 px-4 sm:px-6 py-4">
             <Button variant="outline" asChild>
               <Link href="/dashboard">{t("cancel")}</Link>
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? t("saving") : isEdit ? t("save_changes") : t("create_proposal")}
             </Button>
           </div>
         </div>
@@ -1961,6 +2166,9 @@ interface ItemsGridProps {
   onAddColumn: (label: string) => void;
   onRenameColumn: (id: string, label: string) => void;
   onDeleteColumn: (id: string) => void;
+  userCatalog: UserCatalogItem[];
+  onSaveToCatalog: (item: LineItem) => void;
+  newItemIds: Set<string>;
 }
 
 function ItemsGrid({
@@ -1979,6 +2187,9 @@ function ItemsGrid({
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
+  userCatalog,
+  onSaveToCatalog,
+  newItemIds,
 }: ItemsGridProps) {
   const t = useT();
   const [keyboardTipsOpen, setKeyboardTipsOpen] = useState(false);
@@ -2014,6 +2225,15 @@ function ItemsGrid({
 
   // Navigate only through visible columns in their current order
   const allColKeys = orderedVisibleCols.map((c) => c.id);
+
+  // MO-9: focus management after row delete
+  function handleDeleteItem(id: string, rowIndex: number) {
+    const nextFocusRow = rowIndex > 0 ? rowIndex - 1 : 0;
+    onDeleteItem(id);
+    requestAnimationFrame(() => {
+      focusCell(nextFocusRow, allColKeys[0] ?? "name");
+    });
+  }
 
   function handleCellKeyDown(
     e: KeyboardEvent<HTMLInputElement>,
@@ -2235,15 +2455,22 @@ function ItemsGrid({
               onUpdateField={onUpdateField}
               onUpdateAttr={onUpdateAttr}
               onUpdateImage={onUpdateImage}
-              onDelete={() => onDeleteItem(item.id)}
+              onDelete={() => handleDeleteItem(item.id, rowIndex)}
               onDuplicate={() => onDuplicateItem(item.id)}
               onKeyDown={handleCellKeyDown}
               canDelete={items.length > 1}
               isDragOver={dragOverId === item.id}
+              isNew={newItemIds.has(item.id)}
               onDragStart={() => { /* stored in dataTransfer below */ }}
               onDragOver={(e) => { e.preventDefault(); setDragOverId(item.id); }}
               onDragLeave={() => setDragOverId(null)}
               onDrop={(draggedId) => { setDragOverId(null); onMoveItem(draggedId, item.id); }}
+              isSavedInCatalog={userCatalog.some(
+                (c) => c.name === item.name && c.unit === item.unit && c.unitPrice === item.unitPrice
+              )}
+              onSaveToCatalog={() => onSaveToCatalog(item)}
+              onMoveUp={rowIndex > 0 ? () => onMoveItem(item.id, items[rowIndex - 1].id) : null}
+              onMoveDown={rowIndex < items.length - 1 ? () => onMoveItem(item.id, items[rowIndex + 1].id) : null}
             />
           ))}
         </tbody>
@@ -2286,6 +2513,8 @@ interface ItemRowProps {
   currency: Currency;
   canDelete: boolean;
   isDragOver: boolean;
+  isNew: boolean;
+  isSavedInCatalog: boolean;
   refCallback: (
     rowIndex: number,
     colKey: string
@@ -2294,6 +2523,7 @@ interface ItemRowProps {
   onUpdateAttr: (id: string, colId: string, value: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onSaveToCatalog: () => void;
   onKeyDown: (
     e: KeyboardEvent<HTMLInputElement>,
     rowIndex: number,
@@ -2304,6 +2534,8 @@ interface ItemRowProps {
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (draggedId: string) => void;
+  onMoveUp: (() => void) | null;
+  onMoveDown: (() => void) | null;
 }
 
 function ItemRow({
@@ -2314,28 +2546,34 @@ function ItemRow({
   currency,
   canDelete,
   isDragOver,
+  isNew,
+  isSavedInCatalog,
   refCallback,
   onUpdateField,
   onUpdateAttr,
   onUpdateImage,
   onDelete,
   onDuplicate,
+  onSaveToCatalog,
   onKeyDown,
   onDragOver,
   onDragLeave,
   onDrop,
+  onMoveUp,
+  onMoveDown,
 }: ItemRowProps) {
   const t = useT();
   const lineTotal = item.qty * item.unitPrice;
 
   const cellBase =
-    "w-full bg-transparent rounded px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none border border-transparent hover:border-zinc-700 focus:border-zinc-500 focus:bg-zinc-800/60 transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+    "w-full bg-transparent rounded px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none border border-transparent hover:border-zinc-700 focus:border-zinc-500 focus:bg-zinc-800/60 transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
   return (
     <tr
       className={cn(
         "group/row hover:bg-zinc-800/20 transition-colors",
-        isDragOver && "border-t-2 border-t-blue-500 bg-zinc-800/30"
+        isDragOver && "border-t-2 border-t-blue-500 bg-zinc-800/30",
+        isNew && "animate-row-in"
       )}
       draggable
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.id); e.dataTransfer.effectAllowed = "move"; }}
@@ -2346,10 +2584,20 @@ function ItemRow({
       {/* Drag handle + row number */}
       <td className="w-8 px-1 select-none sticky left-0 z-20 bg-zinc-950/95 backdrop-blur-sm border-r border-zinc-800/80">
         <div className="flex items-center justify-end gap-0.5">
-          <span className="cursor-grab active:cursor-grabbing text-zinc-700 hover:text-zinc-400 opacity-0 group-hover/row:opacity-100 transition-opacity">
+          {/* MO-5: keyboard-accessible row reorder — Space enters move mode, ↑/↓ moves, Escape cancels */}
+          <span
+            tabIndex={0}
+            role="button"
+            aria-label={`Move row ${rowIndex + 1}`}
+            className="cursor-grab active:cursor-grabbing text-zinc-500 hover:text-zinc-300 opacity-0 group-hover/row:opacity-100 focus:opacity-100 focus:text-zinc-300 transition-opacity focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") { e.preventDefault(); onMoveUp?.(); }
+              if (e.key === "ArrowDown") { e.preventDefault(); onMoveDown?.(); }
+            }}
+          >
             <GripVertical className="h-3.5 w-3.5" />
           </span>
-          <span className="text-[11px] text-zinc-700 tabular-nums w-4 text-right">
+          <span className="text-[11px] text-zinc-500 tabular-nums w-4 text-right">
             {rowIndex + 1}
           </span>
         </div>
@@ -2398,6 +2646,35 @@ function ItemRow({
 
           const rawValue = item[fixedCol.key];
           const value = rawValue as string | number;
+
+          // ── Unit column: render as dropdown ────────────────────────────
+          if (fixedCol.key === "unit") {
+            const unitVal = value as string;
+            // If stored value is not in list, show it as a custom option
+            const inList = UNIT_OPTIONS.includes(unitVal);
+            return (
+              <td key="unit" className={cn("px-1 py-0.5", fixedCol.thClass)}>
+                <select
+                  value={inList ? unitVal : ""}
+                  onChange={(e) => onUpdateField(item.id, "unit", e.target.value)}
+                  className="w-full bg-transparent rounded px-1.5 py-1.5 text-sm text-zinc-100 outline-none border border-transparent hover:border-zinc-700 focus:border-zinc-500 focus:bg-zinc-800/60 transition-colors cursor-pointer"
+                  style={{ colorScheme: "dark" }}
+                >
+                  {!inList && unitVal && (
+                    <option value="" disabled className="bg-zinc-900 text-zinc-400">
+                      {unitVal}
+                    </option>
+                  )}
+                  {UNIT_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt} className="bg-zinc-900 text-zinc-100">
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </td>
+            );
+          }
+
           return (
             <td
               key={fixedCol.key}
@@ -2458,13 +2735,34 @@ function ItemRow({
         {formatWithCurrency(lineTotal, currency)}
       </td>
 
-      {/* Duplicate + delete */}
+      {/* Save-to-catalog + duplicate + delete */}
       <td className="w-[52px] px-0.5">
         <div className="flex items-center justify-end gap-0">
+          {/* MO-6: save row to user catalog (only shown when row has a name) */}
+          {item.name.trim() && (
+            <button
+              type="button"
+              onClick={onSaveToCatalog}
+              className={cn(
+                "rounded p-1 transition-all opacity-0 group-hover/row:opacity-100",
+                isSavedInCatalog
+                  ? "text-blue-400 cursor-default"
+                  : "text-zinc-600 hover:text-blue-400 hover:bg-zinc-800"
+              )}
+              title={isSavedInCatalog ? "Already in catalog" : "Save to catalog"}
+              disabled={isSavedInCatalog}
+            >
+              {isSavedInCatalog ? (
+                <BookmarkCheck className="h-3.5 w-3.5" />
+              ) : (
+                <Bookmark className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={onDuplicate}
-            className="rounded p-1 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-all"
+            className="rounded p-1 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-all opacity-0 group-hover/row:opacity-100"
             title={t("duplicate")}
           >
             <Copy className="h-3.5 w-3.5" />
@@ -2473,7 +2771,7 @@ function ItemRow({
             type="button"
             onClick={onDelete}
             disabled={!canDelete}
-            className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 disabled:invisible transition-all"
+            className="rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 disabled:invisible transition-all opacity-0 group-hover/row:opacity-100"
             title={t("delete_row")}
           >
             <Trash2 className="h-3.5 w-3.5" />

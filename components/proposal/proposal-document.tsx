@@ -27,6 +27,7 @@ export function ProposalDocument({
   formattedDate,
   clientMode = false,
 }: ProposalDocumentProps) {
+  void clientMode; // reserved for future use
   const { t } = useI18n();
   const total = proposalTotal(proposal.items);
   const customColumns = proposal.customColumns ?? [];
@@ -66,6 +67,7 @@ export function ProposalDocument({
           }
         />
 
+        {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="px-8 py-7 bg-white border-b border-gray-100 print:px-0 print:py-6">
           <div className="flex items-start justify-between gap-6">
             <div className="min-w-0">
@@ -95,33 +97,20 @@ export function ProposalDocument({
               )}
             </div>
 
-            <div className="shrink-0 text-right space-y-3">
-              {!clientMode && (
-                <div>
-                  <p
-                    className="text-[10px] font-bold uppercase tracking-[0.12em] mb-0.5"
-                    style={{ color: ds.accentColor }}
-                  >
-                    {t("ref")}
-                  </p>
-                  <p className="font-mono text-xs text-gray-500">
-                    #{proposal.id.slice(-8).toUpperCase()}
-                  </p>
-                </div>
-              )}
-              <div>
-                <p
-                  className="text-[10px] font-bold uppercase tracking-[0.12em] mb-0.5"
-                  style={{ color: ds.accentColor }}
-                >
-                  {t("proposal_date")}
-                </p>
-                <p className="text-sm text-gray-700">{formattedDate}</p>
-              </div>
+            {/* QW-7: removed space-y-3 wrapper (was designed for two items; Reg# was deleted) */}
+            <div className="shrink-0 text-right">
+              <p
+                className="text-[10px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                style={{ color: ds.accentColor }}
+              >
+                {t("proposal_date")}
+              </p>
+              <p className="text-sm text-gray-700">{formattedDate}</p>
             </div>
           </div>
         </div>
 
+        {/* ── From / Prepared-for ─────────────────────────────────────────── */}
         <div className="border-b border-gray-100 px-8 py-5 print:px-0 bg-gray-50/50">
           <div className={cn("grid gap-6", proposal.company ? "grid-cols-2" : "grid-cols-1")}>
             {proposal.company && (
@@ -162,8 +151,27 @@ export function ProposalDocument({
           </div>
         </div>
 
+        {/* ── Items table ─────────────────────────────────────────────────── */}
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
+            {/*
+              MO-8: <colgroup> enforces column widths in CSS table model.
+              max-w on <td> alone does NOT constrain table columns — only <col> does.
+              This prevents long descriptions from blowing out print/PDF layout.
+            */}
+            <colgroup>
+              {hasImage && <col style={{ width: "56px" }} />}
+              <col style={{ width: ds.showDescription ? "28%" : "40%" }} />
+              {ds.showDescription && <col style={{ width: "24%" }} />}
+              {ds.showDeliveryTime && <col style={{ width: "12%" }} />}
+              {customColumns.map((col) => (
+                <col key={col.id} style={{ width: "10%" }} />
+              ))}
+              <col style={{ width: "8%" }} />
+              {ds.showPrice && <col style={{ width: "10%" }} />}
+              {ds.showTotal && <col style={{ width: "12%" }} />}
+            </colgroup>
+
             <thead>
               <tr
                 className="bg-white border-b-2"
@@ -176,6 +184,14 @@ export function ProposalDocument({
                 >
                   {t("col_product_service")}
                 </th>
+                {ds.showDescription && (
+                  <th
+                    className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em]"
+                    style={{ color: ds.accentColor }}
+                  >
+                    {t("col_description")}
+                  </th>
+                )}
                 {ds.showDeliveryTime && (
                   <th
                     className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] whitespace-nowrap"
@@ -239,12 +255,15 @@ export function ProposalDocument({
                     )}
                     <td className={cn("px-8 print:px-0", rowPy)}>
                       <p className="font-semibold text-gray-900">{item.name}</p>
-                      {ds.showDescription && item.description && (
-                        <p className="mt-0.5 text-xs text-gray-400 leading-relaxed">
-                          {item.description}
-                        </p>
-                      )}
                     </td>
+                    {ds.showDescription && (
+                      <td
+                        className={cn("px-4 text-xs text-gray-500 leading-relaxed", rowPy)}
+                        style={{ wordBreak: "break-word", maxWidth: 0 }}
+                      >
+                        <span className="whitespace-pre-wrap">{item.description}</span>
+                      </td>
+                    )}
                     {ds.showDeliveryTime && (
                       <td className={cn("px-4 text-sm text-gray-500 whitespace-nowrap", rowPy)}>
                         {item.deliveryTime || "—"}
@@ -292,6 +311,7 @@ export function ProposalDocument({
           </table>
         </div>
 
+        {/* ── Totals ──────────────────────────────────────────────────────── */}
         {ds.showTotal && (
           <div className="flex justify-end border-t border-gray-100 px-8 py-5 print:px-0">
             <dl className="w-56 space-y-2">
@@ -318,6 +338,7 @@ export function ProposalDocument({
           </div>
         )}
 
+        {/* ── Notes ───────────────────────────────────────────────────────── */}
         {proposal.notes && (
           <div className="border-t border-gray-100 px-8 py-5 print:px-0">
             <p
@@ -331,29 +352,6 @@ export function ProposalDocument({
             </p>
           </div>
         )}
-
-        <div className="border-t border-gray-100 px-8 py-8 print:px-0">
-          <div className="grid grid-cols-2 gap-16">
-            <div>
-              <div
-                className="h-9 border-b-2 border-dashed"
-                style={{ borderColor: ds.accentColor + "55" }}
-              />
-              <p className="mt-2 text-xs text-gray-400">{t("signature_date")}</p>
-              {proposal.company && (
-                <p className="mt-0.5 text-xs font-medium text-gray-600">{proposal.company}</p>
-              )}
-            </div>
-            <div>
-              <div
-                className="h-9 border-b-2 border-dashed"
-                style={{ borderColor: ds.accentColor + "55" }}
-              />
-              <p className="mt-2 text-xs text-gray-400">{t("client_signature_date")}</p>
-              <p className="mt-0.5 text-xs font-medium text-gray-600">{proposal.client}</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
