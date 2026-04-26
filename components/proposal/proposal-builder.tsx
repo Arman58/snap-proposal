@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   type KeyboardEvent,
   type ChangeEvent,
 } from "react";
@@ -48,7 +49,6 @@ import {
 import {
   useProposalsStore,
   proposalTotal,
-  formatCurrency,
   formatWithCurrency,
   DEFAULT_DISPLAY_SETTINGS,
   type LineItem,
@@ -196,15 +196,27 @@ const DEFAULT_FIXED_COL_CONFIGS: ColumnConfig[] = [
  * Build initial column configs by merging localStorage preferences (if any)
  * with the fixed defaults and the current custom columns.
  */
+/** Default column layout only — no `localStorage` (must match server render for hydration). */
+function buildDefaultColumnConfigs(customColumns: CustomColumn[]): ColumnConfig[] {
+  const fixedConfigs: ColumnConfig[] = DEFAULT_FIXED_COL_CONFIGS.map((def) => ({ ...def }));
+  const maxFixedOrder = Math.max(...fixedConfigs.map((c) => c.order), 0);
+  const customConfigs: ColumnConfig[] = customColumns.map((col, i) => ({
+    id: col.id,
+    label: col.label,
+    visible: true,
+    order: maxFixedOrder + 1 + i,
+  }));
+  return [...fixedConfigs, ...customConfigs];
+}
+
+/** Merges `localStorage` column prefs. Call from `useEffect` on the client only. */
 function buildInitialColumnConfigs(customColumns: CustomColumn[]): ColumnConfig[] {
   let stored: ColumnConfig[] = [];
-  if (typeof window !== "undefined") {
-    try {
-      const raw = localStorage.getItem(COL_STORAGE_KEY);
-      if (raw) stored = JSON.parse(raw);
-    } catch {
-      // ignore corrupted storage
-    }
+  try {
+    const raw = localStorage.getItem(COL_STORAGE_KEY);
+    if (raw) stored = JSON.parse(raw);
+  } catch {
+    // ignore corrupted storage
   }
 
   // Merge stored user prefs onto fixed column defaults
@@ -213,7 +225,7 @@ function buildInitialColumnConfigs(customColumns: CustomColumn[]): ColumnConfig[
     return s ? { ...def, visible: s.visible, order: s.order } : { ...def };
   });
 
-  const maxFixedOrder = Math.max(...fixedConfigs.map((c) => c.order));
+  const maxFixedOrder = Math.max(...fixedConfigs.map((c) => c.order), 0);
 
   // Restore custom column prefs or create fresh entries
   const customConfigs: ColumnConfig[] = customColumns.map((col, i) => {
@@ -640,10 +652,12 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
     existing?.customColumns ?? []
   );
 
-  // Column Manager state — initialised from localStorage + existing custom cols
+  // Column manager: first paint must not read localStorage (SSR vs client mismatch).
+  // Prefs are applied in useEffect after mount.
   const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>(() =>
-    buildInitialColumnConfigs(existing?.customColumns ?? [])
+    buildDefaultColumnConfigs(existing?.customColumns ?? [])
   );
+  const skipColConfigPersistOnce = useRef(true);
 
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -654,8 +668,17 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const total = proposalTotal(items);
   const canSave = title.trim() !== "" && client.trim() !== "";
 
-  // Persist column configs whenever they change
+  // Apply `localStorage` after mount, before paint — avoids hydration mismatch and default→storage flash
+  useLayoutEffect(() => {
+    setColumnConfigs(buildInitialColumnConfigs(customColumns));
+  }, [customColumns]);
+
+  // Persist column configs whenever they change (skip first run: that pass still has SSR default)
   useEffect(() => {
+    if (skipColConfigPersistOnce.current) {
+      skipColConfigPersistOnce.current = false;
+      return;
+    }
     try {
       localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(columnConfigs));
     } catch {
@@ -1012,6 +1035,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             customColumns={customColumns}
             columnConfigs={columnConfigs}
             total={total}
+            currency={displaySettings.currency}
             onAddItem={addItem}
             onDeleteItem={deleteItem}
             onMoveItem={moveItem}
@@ -1045,7 +1069,7 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
                       >
                         <span className="text-zinc-300">{p.name}</span>
                         <span className="text-zinc-600">
-                          {formatCurrency(p.unitPrice)}/{p.unit}
+                          {formatWithCurrency(p.unitPrice, displaySettings.currency)}/{p.unit}
                         </span>
                       </button>
                     ))}
@@ -1224,6 +1248,7 @@ interface ItemsGridProps {
   customColumns: CustomColumn[];
   columnConfigs: ColumnConfig[];
   total: number;
+  currency: Currency;
   onAddItem: (afterIndex?: number) => void;
   onDeleteItem: (id: string) => void;
   onMoveItem: (fromId: string, toId: string) => void;
@@ -1240,6 +1265,7 @@ function ItemsGrid({
   customColumns,
   columnConfigs,
   total,
+  currency,
   onAddItem,
   onDeleteItem,
   onMoveItem,
@@ -1473,6 +1499,7 @@ function ItemsGrid({
               rowIndex={rowIndex}
               customColumns={customColumns}
               orderedVisibleCols={orderedVisibleCols}
+              currency={currency}
               refCallback={refCallback}
               onUpdateField={onUpdateField}
               onUpdateAttr={onUpdateAttr}
@@ -1506,7 +1533,7 @@ function ItemsGrid({
               </button>
             </td>
             <td className="py-2.5 px-2 text-right text-sm font-bold font-mono text-zinc-100 whitespace-nowrap">
-              {formatCurrency(total)}
+              {formatWithCurrency(total, currency)}
             </td>
             <td />
           </tr>
@@ -1523,6 +1550,7 @@ interface ItemRowProps {
   rowIndex: number;
   customColumns: CustomColumn[];
   orderedVisibleCols: ColumnConfig[];
+  currency: Currency;
   canDelete: boolean;
   isDragOver: boolean;
   refCallback: (
@@ -1549,6 +1577,7 @@ function ItemRow({
   rowIndex,
   customColumns,
   orderedVisibleCols,
+  currency,
   canDelete,
   isDragOver,
   refCallback,
@@ -1683,7 +1712,7 @@ function ItemRow({
 
       {/* Line total */}
       <td className="w-[88px] px-2 text-right text-sm font-mono text-zinc-400 tabular-nums whitespace-nowrap">
-        {formatCurrency(lineTotal)}
+        {formatWithCurrency(lineTotal, currency)}
       </td>
 
       {/* Delete */}
