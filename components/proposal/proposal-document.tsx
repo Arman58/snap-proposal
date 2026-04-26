@@ -5,6 +5,8 @@ import {
   proposalTotal,
   formatWithCurrency,
   DEFAULT_DISPLAY_SETTINGS,
+  DOCUMENT_FONT_STACK,
+  type DocumentFont,
   type Proposal,
 } from "@/store/proposals";
 import { cn } from "@/lib/utils";
@@ -29,6 +31,12 @@ export function ProposalDocument({
   const total = proposalTotal(proposal.items);
   const customColumns = proposal.customColumns ?? [];
   const ds = { ...DEFAULT_DISPLAY_SETTINGS, ...proposal.displaySettings };
+  const fontKey = (["inter", "system", "serif"] as const).includes(
+    ds.documentFont as DocumentFont
+  )
+    ? (ds.documentFont as DocumentFont)
+    : "inter";
+  const docFont = DOCUMENT_FONT_STACK[fontKey];
   const fmt = (n: number) => formatWithCurrency(n, ds.currency);
   const rowPy = ds.spacing === "compact" ? "py-2" : "py-4";
   const hasImage = proposal.items.some((i) => i.imageUrl);
@@ -41,6 +49,7 @@ export function ProposalDocument({
                    print:max-w-none print:rounded-none print:border-0"
         style={
           {
+            fontFamily: docFont,
             WebkitPrintColorAdjust: "exact",
             printColorAdjust: "exact",
           } as React.CSSProperties

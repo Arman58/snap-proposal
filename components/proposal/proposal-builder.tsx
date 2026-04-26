@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   type KeyboardEvent,
   type ChangeEvent,
 } from "react";
@@ -55,19 +56,85 @@ import {
   DEFAULT_DISPLAY_SETTINGS,
   type LineItem,
   type CustomColumn,
+  type Proposal,
   type ProposalStatus,
   type Currency,
   type DisplaySettings,
+  type DocumentFont,
 } from "@/store/proposals";
-import { ProposalPreview } from "./proposal-preview";
+import { ProposalDocument } from "./proposal-document";
 import { PRODUCT_CATALOG } from "@/lib/mock-data";
-import { useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/lib/i18n";
+import { useProposalImage } from "@/lib/use-proposal-image";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 
 const BUILDER_DRAFT_VERSION = 1;
 const SYNC_THEME_KEY = "snap-sync-theme-accent";
 const THEME_COLOR_KEY = "app-theme-color";
+
+const PREVIEW_PANEL_STORAGE_KEY = "snap-preview-panel-v1";
+const DEFAULT_PREVIEW_WIDTH = 360;
+const PREVIEW_PANEL_MARGIN = 20;
+const MIN_PREVIEW_WIDTH = 280;
+const MAX_PREVIEW_WIDTH_CAP = 900;
+const MIN_PREVIEW_HEIGHT = 200;
+const DEFAULT_PREVIEW_MAX_HEIGHT = 90;
+
+function maxPreviewWidthForViewport(vw: number) {
+  return Math.min(MAX_PREVIEW_WIDTH_CAP, Math.max(MIN_PREVIEW_WIDTH, vw - 24));
+}
+
+function maxPreviewHeightForViewport(vh: number) {
+  return Math.max(MIN_PREVIEW_HEIGHT, vh - DEFAULT_PREVIEW_MAX_HEIGHT);
+}
+
+type PreviewPanelLayout = { left: number; top: number; width: number; height: number };
+
+function clampPreviewLayout(p: PreviewPanelLayout): PreviewPanelLayout {
+  const margin = PREVIEW_PANEL_MARGIN;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const maxH = maxPreviewHeightForViewport(vh);
+  const maxW = maxPreviewWidthForViewport(vw);
+  let width = Math.min(Math.max(p.width, MIN_PREVIEW_WIDTH), maxW);
+  let height = Math.min(Math.max(p.height, MIN_PREVIEW_HEIGHT), maxH);
+  let left = p.left;
+  let top = p.top;
+  if (left + width > vw - margin) left = Math.max(margin, vw - width - margin);
+  if (left < margin) left = margin;
+  if (left + width > vw - margin) width = Math.max(MIN_PREVIEW_WIDTH, vw - margin - left);
+  if (top + height > vh - margin) top = Math.max(margin, vh - height - margin);
+  if (top < margin) top = margin;
+  if (top + height > vh - margin) height = Math.max(MIN_PREVIEW_HEIGHT, vh - margin - top);
+  if (height > maxH) height = maxH;
+  return { left, top, width, height };
+}
+
+/** Parsed from storage; `height` may be missing in legacy snapshots. */
+function parsePreviewLayout(
+  raw: string | null
+): { left: number; top: number; width: number; height?: number } | null {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      typeof p.left === "number" &&
+      typeof p.top === "number" &&
+      typeof p.width === "number" &&
+      Number.isFinite(p.left) &&
+      Number.isFinite(p.top) &&
+      Number.isFinite(p.width)
+    ) {
+      const height =
+        typeof p.height === "number" && Number.isFinite(p.height) ? p.height : undefined;
+      return { left: p.left, top: p.top, width: p.width, height };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 function builderFormSnapshot(p: {
   title: string;
@@ -625,6 +692,31 @@ function FinalSettingsDropdown({
             </div>
           </div>
 
+          {/* Document font */}
+          <div className="px-3 py-2 border-b border-zinc-800">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
+              {t("document_font")}
+            </p>
+            <div className="grid grid-cols-3 gap-1">
+              {(["inter", "system", "serif"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => onChange({ ...settings, documentFont: f as DocumentFont })}
+                  className={`rounded px-1 py-1.5 text-[10px] font-medium leading-tight transition-colors ${
+                    (settings.documentFont ?? "inter") === f
+                      ? "bg-blue-600 text-white"
+                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {f === "inter" && t("font_inter")}
+                  {f === "system" && t("font_system")}
+                  {f === "serif" && t("font_serif")}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Accent color */}
           <div className="px-3 py-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
@@ -685,9 +777,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const [status, setStatus] = useState<ProposalStatus>(
     existing?.status ?? "draft"
   );
-  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(
-    existing?.displaySettings ?? { ...DEFAULT_DISPLAY_SETTINGS }
-  );
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(() => ({
+    ...DEFAULT_DISPLAY_SETTINGS,
+    ...existing?.displaySettings,
+  }));
   const [items, setItems] = useState<LineItem[]>(
     existing?.items.length ? existing.items : [emptyItem([])]
   );
@@ -704,6 +797,9 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
 
   const [saving, setSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewLayout, setPreviewLayout] = useState<PreviewPanelLayout | null>(null);
+  const previewPanelRef = useRef<HTMLDivElement | null>(null);
+  const moveStartRef = useRef({ x: 0, y: 0, left: 0, top: 0, width: 0, height: 0 });
   const [previewDocDate] = useState(
     () => existing?.updatedAt ?? new Date().toISOString().split("T")[0]
   );
@@ -718,6 +814,57 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   const [draftReady, setDraftReady] = useState(false);
 
   const t = useT();
+  const { locale } = useI18n();
+  const proposalImagePreview = useProposalImage(initialId ?? "");
+
+  const formattedPreviewDate = useMemo(() => {
+    const dateLocale = locale === "ru" ? "ru-RU" : "en-US";
+    return new Date(previewDocDate + "T12:00:00").toLocaleDateString(dateLocale, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [locale, previewDocDate]);
+
+  const previewAsProposal: Proposal = useMemo(
+    () => ({
+      id: initialId ?? "0000000000000000",
+      title: title || "",
+      company,
+      companyEmail: companyEmail || undefined,
+      companyPhone: companyPhone || undefined,
+      client: client || "",
+      clientEmail,
+      clientCompany: clientCompany || undefined,
+      clientPhone: clientPhone || undefined,
+      status,
+      createdAt: previewDocDate,
+      updatedAt: previewDocDate,
+      notes: showNotes ? notes : "",
+      items,
+      customColumns,
+      displaySettings,
+    }),
+    [
+      initialId,
+      title,
+      company,
+      companyEmail,
+      companyPhone,
+      client,
+      clientEmail,
+      clientCompany,
+      clientPhone,
+      status,
+      previewDocDate,
+      showNotes,
+      notes,
+      items,
+      customColumns,
+      displaySettings,
+    ]
+  );
+
   const isEdit = Boolean(initialId);
   const total = proposalTotal(items);
   const canSave = title.trim() !== "" && client.trim() !== "";
@@ -762,6 +909,180 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
   );
 
   const isDirty = draftReady && buildSnapshot() !== lastSavedRef.current;
+
+  // Floating live preview: default bottom-right, then localStorage; drag + resize
+  useLayoutEffect(() => {
+    if (previewLayout !== null) return;
+    if (!previewOpen) return;
+    const el = previewPanelRef.current;
+    if (!el) return;
+    const h = el.getBoundingClientRect().height;
+    let fromStorage: ReturnType<typeof parsePreviewLayout> = null;
+    try {
+      fromStorage = parsePreviewLayout(
+        localStorage.getItem(PREVIEW_PANEL_STORAGE_KEY)
+      );
+    } catch {
+      /* ignore */
+    }
+    if (fromStorage) {
+      const full: PreviewPanelLayout = {
+        left: fromStorage.left,
+        top: fromStorage.top,
+        width: fromStorage.width,
+        height: fromStorage.height ?? h,
+      };
+      setPreviewLayout(clampPreviewLayout(full));
+      return;
+    }
+    const w = DEFAULT_PREVIEW_WIDTH;
+    setPreviewLayout(
+      clampPreviewLayout({
+        left: window.innerWidth - w - PREVIEW_PANEL_MARGIN,
+        top: window.innerHeight - h - PREVIEW_PANEL_MARGIN,
+        width: w,
+        height: h,
+      })
+    );
+  }, [previewOpen, previewLayout]);
+
+  useEffect(() => {
+    if (previewLayout === null) return;
+    try {
+      localStorage.setItem(
+        PREVIEW_PANEL_STORAGE_KEY,
+        JSON.stringify(previewLayout)
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [previewLayout]);
+
+  useEffect(() => {
+    function onWinResize() {
+      if (!previewPanelRef.current) return;
+      setPreviewLayout((prev) => (prev ? clampPreviewLayout(prev) : prev));
+    }
+    window.addEventListener("resize", onWinResize);
+    return () => window.removeEventListener("resize", onWinResize);
+  }, []);
+
+  const onPreviewHeaderPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      if (!previewLayout) return;
+      e.preventDefault();
+      const el = e.currentTarget;
+      moveStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        left: previewLayout.left,
+        top: previewLayout.top,
+        width: previewLayout.width,
+        height: previewLayout.height,
+      };
+      el.setPointerCapture(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        const s = moveStartRef.current;
+        setPreviewLayout(
+          clampPreviewLayout({
+            left: s.left + (ev.clientX - s.x),
+            top: s.top + (ev.clientY - s.y),
+            width: s.width,
+            height: s.height,
+          })
+        );
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (el.hasPointerCapture(ev.pointerId)) {
+          el.releasePointerCapture(ev.pointerId);
+        }
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    },
+    [previewLayout]
+  );
+
+  const onPreviewResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      if (!previewLayout) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = previewLayout.width;
+      const startLeft = previewLayout.left;
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        const delta = ev.clientX - startX;
+        // Left-edge handle: right edge of panel stays fixed
+        setPreviewLayout((prev) => {
+          if (!prev) return null;
+          return clampPreviewLayout({
+            left: startLeft + delta,
+            top: prev.top,
+            width: startW - delta,
+            height: prev.height,
+          });
+        });
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (el.hasPointerCapture(ev.pointerId)) {
+          el.releasePointerCapture(ev.pointerId);
+        }
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    },
+    [previewLayout]
+  );
+
+  const onPreviewHeightResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      if (!previewLayout) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startY = e.clientY;
+      const startH = previewLayout.height;
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        const delta = ev.clientY - startY;
+        setPreviewLayout((prev) => {
+          if (!prev) return null;
+          return clampPreviewLayout({
+            left: prev.left,
+            top: prev.top,
+            width: prev.width,
+            height: startH + delta,
+          });
+        });
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (el.hasPointerCapture(ev.pointerId)) {
+          el.releasePointerCapture(ev.pointerId);
+        }
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    },
+    [previewLayout]
+  );
 
   useEffect(() => {
     try {
@@ -900,7 +1221,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
         notes: ex?.notes ?? "",
         showNotes: Boolean(ex?.notes),
         status: ex?.status ?? "draft",
-        displaySettings: ex?.displaySettings ?? { ...DEFAULT_DISPLAY_SETTINGS },
+        displaySettings: {
+          ...DEFAULT_DISPLAY_SETTINGS,
+          ...ex?.displaySettings,
+        },
         items: ex?.items?.length ? ex.items : [emptyItem(ex?.customColumns ?? [])],
         customColumns: ex?.customColumns ?? [],
         columnConfigs: buildDefaultColumnConfigs(ex?.customColumns ?? []),
@@ -1525,44 +1849,77 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
 
       </div>
 
-      {/* Floating preview — bottom-right */}
+      {/* Floating preview — bottom-right (draggable, resizable; prefs in localStorage) */}
       {previewOpen && (
-        <div className="hidden lg:flex flex-col fixed bottom-5 right-5 z-50 w-[360px] max-h-[calc(100vh-90px)] rounded-xl shadow-2xl overflow-hidden border border-gray-200 bg-white">
-          {/* Preview label bar */}
-          <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200 shrink-0">
+        <div
+          ref={previewPanelRef}
+          className={cn(
+            "hidden lg:flex flex-col fixed z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl",
+            previewLayout == null && "bottom-5 right-5 w-[360px] max-h-[calc(100vh-90px)]"
+          )}
+          style={
+            previewLayout
+              ? {
+                  left: previewLayout.left,
+                  top: previewLayout.top,
+                  width: previewLayout.width,
+                  height: previewLayout.height,
+                }
+              : undefined
+          }
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onPointerDown={onPreviewResizePointerDown}
+            className="absolute left-0 top-0 bottom-2.5 z-20 w-2.5 cursor-ew-resize select-none hover:bg-gray-200/50 active:bg-gray-200/80"
+            title={t("preview_resize_handle")}
+            style={{ touchAction: "none" }}
+          />
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            onPointerDown={onPreviewHeightResizePointerDown}
+            className="absolute bottom-0 left-0 right-0 z-20 h-2.5 cursor-ns-resize select-none hover:bg-gray-200/50 active:bg-gray-200/80"
+            title={t("preview_resize_height_handle")}
+            style={{ touchAction: "none" }}
+          />
+          {/* Preview label bar — drag handle */}
+          <div
+            onPointerDown={onPreviewHeaderPointerDown}
+            className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200 shrink-0 cursor-grab active:cursor-grabbing select-none"
+            style={{ touchAction: "none" }}
+            title={t("preview_drag_to_move")}
+          >
             <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
               {t("live_preview")}
             </span>
             <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setPreviewOpen(false)}
-              className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
               title={t("hide_preview")}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
             </button>
           </div>
-          <div className="overflow-auto flex-1">
-            <ProposalPreview
-              title={title}
-              company={company}
-              companyEmail={companyEmail}
-              companyPhone={companyPhone}
-              client={client}
-              clientEmail={clientEmail}
-              clientCompany={clientCompany}
-              clientPhone={clientPhone}
-              notes={notes}
-              items={items}
-              customColumns={customColumns}
-              status={status}
-              documentDate={previewDocDate}
-              showPrice={displaySettings.showPrice}
-              showTotal={displaySettings.showTotal}
-              showDescription={displaySettings.showDescription}
-              showDeliveryTime={displaySettings.showDeliveryTime}
-              currency={displaySettings.currency}
-              spacing={displaySettings.spacing}
-              accentColor={displaySettings.accentColor}
+          <div className="overflow-auto min-h-0 flex-1 bg-zinc-100/30">
+            <ProposalDocument
+              proposal={previewAsProposal}
+              proposalImage={proposalImagePreview}
+              formattedDate={formattedPreviewDate}
             />
           </div>
         </div>
@@ -1574,27 +1931,10 @@ export function ProposalBuilder({ initialId }: ProposalBuilderProps) {
             <DialogTitle className="text-base">{t("preview_sheet_title")}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto bg-zinc-900 p-4">
-            <ProposalPreview
-              title={title}
-              company={company}
-              companyEmail={companyEmail}
-              companyPhone={companyPhone}
-              client={client}
-              clientEmail={clientEmail}
-              clientCompany={clientCompany}
-              clientPhone={clientPhone}
-              notes={notes}
-              items={items}
-              customColumns={customColumns}
-              status={status}
-              documentDate={previewDocDate}
-              showPrice={displaySettings.showPrice}
-              showTotal={displaySettings.showTotal}
-              showDescription={displaySettings.showDescription}
-              showDeliveryTime={displaySettings.showDeliveryTime}
-              currency={displaySettings.currency}
-              spacing={displaySettings.spacing}
-              accentColor={displaySettings.accentColor}
+            <ProposalDocument
+              proposal={previewAsProposal}
+              proposalImage={proposalImagePreview}
+              formattedDate={formattedPreviewDate}
             />
           </div>
         </DialogContent>

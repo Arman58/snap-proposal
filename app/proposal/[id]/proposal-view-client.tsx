@@ -217,6 +217,9 @@ export function ProposalViewClient() {
             <p className="text-[11px] text-zinc-500 max-w-md text-right leading-snug print:hidden">
               {t("print_pdf_hint")}
             </p>
+            <p className="text-[10px] text-zinc-600 max-w-md text-right leading-snug print:hidden">
+              {t("client_link_local_hint")}
+            </p>
           </div>
         </div>
       </div>

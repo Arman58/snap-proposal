@@ -29,6 +29,16 @@ export interface LineItem {
 
 export type Currency = "AMD" | "RUB" | "USD";
 
+/** Document body font for print/PDF and preview; stacks use app/system fonts. */
+export type DocumentFont = "inter" | "system" | "serif";
+
+export const DOCUMENT_FONT_STACK: Record<DocumentFont, string> = {
+  inter: '"Inter", ui-sans-serif, system-ui, sans-serif',
+  system:
+    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  serif: 'ui-serif, Georgia, "Times New Roman", Times, serif',
+};
+
 export interface DisplaySettings {
   showPrice: boolean;
   showTotal: boolean;
@@ -37,6 +47,7 @@ export interface DisplaySettings {
   currency: Currency;
   spacing: "compact" | "comfortable";
   accentColor: string;
+  documentFont: DocumentFont;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -47,6 +58,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   currency: "USD",
   spacing: "comfortable",
   accentColor: "#6366f1",
+  documentFont: "inter",
 };
 
 export interface Proposal {
